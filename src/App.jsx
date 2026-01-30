@@ -18,6 +18,7 @@ const INITIAL_CATEGORIES = {
     'gui': { icon: 'Heart', label: 'Gui', color: 'bg-[#FF7675]', type: 'receita' },
     'lindezo': { icon: 'Heart', label: 'Lindezo', color: 'bg-[#FF7675]', type: 'receita' },
     'airbnb': { icon: 'Home', label: 'Airbnb', color: 'bg-[#FF5A5F]', type: 'receita' },
+    'outras-receitas': { icon: 'MoreHorizontal', label: 'Outras Receitas', color: 'bg-[#7F8C8D]', type: 'receita' },
     'mercado': { icon: 'ShoppingCart', label: 'Mercado', color: 'bg-[#F1C40F]', type: 'despesa' },
     'casa': { icon: 'Home', label: 'Casa', color: 'bg-[#3498DB]', type: 'despesa' },
     'saude': { icon: 'Heart', label: 'Saúde', color: 'bg-[#9B59B6]', type: 'despesa' },
@@ -604,7 +605,7 @@ export default function MinhaMerreca() {
             {/* Sidebar Fixa */}
             <aside className="w-96 bg-white p-8 flex flex-col h-screen overflow-y-auto border-r border-gray-100 z-50">
                 <div className="mb-8 flex items-center justify-center border-b border-gray-50 pb-8">
-                    <img src="/logo.png" alt="Minha Merreca" className="h-20 object-contain w-auto" />
+                    <img src="./logo.png" alt="Minha Merreca" className="h-20 object-contain w-auto" />
                 </div>
 
                 <div className="space-y-6 mb-10">
@@ -721,7 +722,7 @@ export default function MinhaMerreca() {
                                         <button key={k} onClick={() => setActiveFilters({ ...activeFilters, payment: k })} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${activeFilters.payment === k ? 'bg-gray-200 text-gray-800' : 'hover:text-gray-600'}`}>{k}</button>
                                     ))}
                                     <span className="text-gray-200">|</span>
-                                    {Object.entries(categories).filter(([k]) => k !== 'teste' && k !== 'despesas').map(([k, v]) => (
+                                    {Object.entries(categories).filter(([k, v]) => k !== 'teste' && k !== 'despesas' && v.type !== 'receita').map(([k, v]) => (
                                         <button key={k} onClick={() => setActiveFilters({ ...activeFilters, category: k })} className={`px-3 py-1.5 rounded-lg text-[8px] font-bold uppercase tracking-widest transition-all ${activeFilters.category === k ? 'bg-gray-200 text-gray-800' : 'hover:text-gray-600'}`}>{v.label}</button>
                                     ))}
                                 </div>
