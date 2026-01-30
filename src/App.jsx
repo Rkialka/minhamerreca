@@ -499,10 +499,10 @@ export default function MinhaMerreca() {
                         key={tab}
                         onClick={() => {
                             setEntryType(tab);
-                            if (tab === 'receita') setSelectedCat('receita');
+                            if (tab === 'receita') setSelectedCat('dani');
                             else setSelectedCat('outros');
                         }}
-                        className={`flex-1 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${entryType === tab ? (tab === 'receita' ? 'text-[#2ECC71] border-b-4 border-[#2ECC71]' : 'text-[#1F1F1F] border-b-4 border-[#1F1F1F]') : 'text-gray-300'}`}
+                        className={`flex-1 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${entryType === tab ? (tab === 'receita' ? 'text-[#2ECC71] border-b-4 border-[#2ECC71]' : (tab === 'despesa' ? 'text-red-500 border-b-4 border-red-500' : 'text-[#1F1F1F] border-b-4 border-[#1F1F1F]')) : 'text-gray-300'}`}
                     >
                         {tab === 'transferencia' ? 'Transferência' : tab}
                     </button>
@@ -532,7 +532,7 @@ export default function MinhaMerreca() {
                     <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-50">
                         <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-3">Categoria</p>
                         <select value={selectedCat} onChange={e => setSelectedCat(e.target.value)} className="w-full bg-transparent font-black text-lg outline-none text-[#2C3E50] border-none">
-                            {Object.entries(categories).filter(([k, v]) => !['receita', 'despesa'].includes(v.label.toLowerCase())).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                            {Object.entries(categories).filter(([k, v]) => !['receita', 'despesa'].includes(v.label.toLowerCase()) && v.type === entryType).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                         </select>
                     </div>
 
@@ -590,7 +590,7 @@ export default function MinhaMerreca() {
                 <button onClick={() => setView('HOME')} className="absolute left-10 p-4 text-gray-300 hover:text-red-500 transition-colors"><X size={32} /></button>
                 <button
                     onClick={handleSave}
-                    className="w-24 h-24 bg-[#2ECC71] rounded-full flex items-center justify-center shadow-[0_20px_50px_rgba(46,204,113,0.4)] hover:scale-105 active:scale-95 transition-all"
+                    className={`w-24 h-24 ${entryType === 'receita' ? 'bg-[#2ECC71] shadow-[0_20px_50px_rgba(46,204,113,0.4)]' : (entryType === 'despesa' ? 'bg-red-500 shadow-[0_20px_50px_rgba(239,68,68,0.4)]' : 'bg-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.2)]')} rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all`}
                 >
                     <Check size={40} className="text-white" strokeWidth={4} />
                 </button>
@@ -603,13 +603,8 @@ export default function MinhaMerreca() {
         <div className="h-screen bg-[#FDFDFD] text-[#2C3E50] flex font-sans overflow-hidden">
             {/* Sidebar Fixa */}
             <aside className="w-96 bg-white p-8 flex flex-col h-screen overflow-y-auto border-r border-gray-100 z-50">
-                <div className="mb-8 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-[#2ECC71] rounded-xl flex items-center justify-center shadow-lg">
-                            <DollarSign size={22} className="text-white" />
-                        </div>
-                        <h1 className="text-xl font-black tracking-tighter uppercase italic">Minha <span className="text-[#2ECC71]">Merreca</span> <span className="text-[8px] text-gray-300 not-italic">V2</span></h1>
-                    </div>
+                <div className="mb-8 flex items-center justify-center border-b border-gray-50 pb-8">
+                    <img src="/logo.png" alt="Minha Merreca" className="h-20 object-contain w-auto" />
                 </div>
 
                 <div className="space-y-6 mb-10">
@@ -641,7 +636,7 @@ export default function MinhaMerreca() {
                                     if (tab === 'receita') setSelectedCat('dani');
                                     else setSelectedCat('outros');
                                 }}
-                                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${entryType === tab ? (tab === 'receita' ? 'bg-[#2ECC71] text-white shadow-lg' : 'bg-[#1F1F1F] text-white') : 'text-gray-300'}`}
+                                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${entryType === tab ? (tab === 'receita' ? 'bg-[#2ECC71] text-white shadow-lg' : 'bg-red-500 text-white shadow-lg') : 'text-gray-300'}`}
                             >
                                 {tab}
                             </button>
@@ -689,7 +684,7 @@ export default function MinhaMerreca() {
                             />
                         </div>
 
-                        <button onClick={handleSave} className="w-full bg-[#2ECC71] text-white py-5 rounded-2xl font-black text-sm tracking-widest shadow-lg shadow-green-900/10 active:scale-95 transition-all mt-2">LANÇAR AGORA</button>
+                        <button onClick={handleSave} className={`w-full ${entryType === 'receita' ? 'bg-[#2ECC71]' : 'bg-red-500'} text-white py-5 rounded-2xl font-black text-sm tracking-widest shadow-lg active:scale-95 transition-all mt-2`}>LANÇAR AGORA</button>
                     </div>
                 </div>
             </aside>
@@ -751,6 +746,8 @@ export default function MinhaMerreca() {
                                         {filteredTransactions.map(t => {
                                             const cat = categories[t.category] || categories['outros'];
                                             const pay = PAYMENT_METHODS[t.paymentMethod] || PAYMENT_METHODS['PIX'];
+                                            const isEditing = (field) => editingCell?.id === t.id && editingCell?.field === field;
+
                                             return (
                                                 <tr key={t.id} className="hover:bg-gray-50 transition-colors group cursor-default">
                                                     <td className="px-8 py-6">
@@ -758,14 +755,48 @@ export default function MinhaMerreca() {
                                                             {t.status === 'pago' ? 'PAGO' : 'PENDENTE'}
                                                         </button>
                                                     </td>
-                                                    <td className="px-8 py-6">
-                                                        <span className="text-slate-500 text-[11px] tabular-nums font-black">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                                    <td className="px-8 py-6" onDoubleClick={() => setEditingCell({ id: t.id, field: 'date' })}>
+                                                        {isEditing('date') ? (
+                                                            <input
+                                                                type="date"
+                                                                defaultValue={t.date}
+                                                                autoFocus
+                                                                onBlur={(e) => handleInlineUpdate(t.id, 'date', e.target.value)}
+                                                                onKeyDown={(e) => e.key === 'Enter' && handleInlineUpdate(t.id, 'date', e.target.value)}
+                                                                className="bg-white border border-gray-200 p-2 rounded text-[11px] outline-none w-full"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-slate-500 text-[11px] tabular-nums font-black">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                                        )}
                                                     </td>
-                                                    <td className="px-8 py-6 text-slate-800">
-                                                        <span>{t.description}</span>
+                                                    <td className="px-8 py-6 text-slate-800" onDoubleClick={() => setEditingCell({ id: t.id, field: 'description' })}>
+                                                        {isEditing('description') ? (
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={t.description}
+                                                                autoFocus
+                                                                onBlur={(e) => handleInlineUpdate(t.id, 'description', e.target.value)}
+                                                                onKeyDown={(e) => e.key === 'Enter' && handleInlineUpdate(t.id, 'description', e.target.value)}
+                                                                className="bg-white border border-gray-200 p-2 rounded text-sm outline-none w-full font-bold"
+                                                            />
+                                                        ) : (
+                                                            <span>{t.description}</span>
+                                                        )}
                                                     </td>
-                                                    <td className="px-8 py-6">
-                                                        <span className="text-slate-500 uppercase text-[10px] font-black tracking-widest">{cat.label}</span>
+                                                    <td className="px-8 py-6" onDoubleClick={() => setEditingCell({ id: t.id, field: 'category' })}>
+                                                        {isEditing('category') ? (
+                                                            <select
+                                                                defaultValue={t.category}
+                                                                autoFocus
+                                                                onChange={(e) => handleInlineUpdate(t.id, 'category', e.target.value)}
+                                                                onBlur={() => setEditingCell(null)}
+                                                                className="bg-white border border-gray-200 p-2 rounded text-[10px] outline-none w-full uppercase font-black"
+                                                            >
+                                                                {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <span className="text-slate-500 uppercase text-[10px] font-black tracking-widest">{cat.label}</span>
+                                                        )}
                                                     </td>
                                                     <td className="px-8 py-6">
                                                         <span className="text-slate-400 uppercase text-[9px] font-black tracking-widest">{t.repeatType === 'avista' || !t.repeatType ? 'À Vista' : t.repeatType}</span>
@@ -775,11 +806,34 @@ export default function MinhaMerreca() {
                                                             {t.repeatType === 'parcelado' ? `${t.parcelaNum || 1}/${t.parcelasTotal || 1}` : '—'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-8 py-6 text-slate-500">
-                                                        <span className="uppercase text-[9px] font-black tracking-[0.1em]">{pay.label}</span>
+                                                    <td className="px-8 py-6 text-slate-500" onDoubleClick={() => setEditingCell({ id: t.id, field: 'paymentMethod' })}>
+                                                        {isEditing('paymentMethod') ? (
+                                                            <select
+                                                                defaultValue={t.paymentMethod}
+                                                                autoFocus
+                                                                onChange={(e) => handleInlineUpdate(t.id, 'paymentMethod', e.target.value)}
+                                                                onBlur={() => setEditingCell(null)}
+                                                                className="bg-white border border-gray-200 p-2 rounded text-[9px] outline-none w-full uppercase font-black"
+                                                            >
+                                                                {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <span className="uppercase text-[9px] font-black tracking-[0.1em]">{pay.label}</span>
+                                                        )}
                                                     </td>
-                                                    <td className={`px-8 py-6 text-right text-lg font-black ${t.type === 'receita' ? 'text-[#2ECC71]' : 'text-slate-800'}`}>
-                                                        {t.type === 'receita' ? '+' : '-'} {formatBoleto(t.amount)}
+                                                    <td className={`px-8 py-6 text-right text-lg font-black ${t.type === 'receita' ? 'text-[#2ECC71]' : 'text-slate-800'}`} onDoubleClick={() => setEditingCell({ id: t.id, field: 'amount' })}>
+                                                        {isEditing('amount') ? (
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={t.amount}
+                                                                autoFocus
+                                                                onBlur={(e) => handleInlineUpdate(t.id, 'amount', parseFloat(e.target.value.replace(',', '.')) || 0)}
+                                                                onKeyDown={(e) => e.key === 'Enter' && handleInlineUpdate(t.id, 'amount', parseFloat(e.target.value.replace(',', '.')) || 0)}
+                                                                className="bg-white border border-gray-200 p-2 rounded text-right text-lg outline-none w-full font-black"
+                                                            />
+                                                        ) : (
+                                                            <span>{t.type === 'receita' ? '+' : '-'} {formatBoleto(t.amount)}</span>
+                                                        )}
                                                     </td>
                                                     <td className="px-8 py-6">
                                                         <div className="flex items-center gap-2">
@@ -787,7 +841,7 @@ export default function MinhaMerreca() {
                                                                 placeholder="Notas..."
                                                                 defaultValue={t.notes || ''}
                                                                 onBlur={(e) => handleInlineUpdate(t.id, 'notes', e.target.value)}
-                                                                className="bg-transparent border-none outline-none text-[10px] text-slate-400 focus:text-slate-800 w-full"
+                                                                className="bg-transparent border-none outline-none text-[10px] text-slate-400 focus:text-slate-800 w-full font-bold"
                                                             />
                                                             <button onClick={() => handleDelete(t.id)} className="p-2 text-slate-200 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
                                                         </div>
