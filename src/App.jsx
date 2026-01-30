@@ -13,6 +13,11 @@ import {
 
 // --- CONSTANTES ---
 const INITIAL_CATEGORIES = {
+    'dani': { icon: 'Heart', label: 'Dani', color: 'bg-[#FF7675]', type: 'receita' },
+    'portipar': { icon: 'DollarSign', label: 'Portipar', color: 'bg-[#2ECC71]', type: 'receita' },
+    'gui': { icon: 'Heart', label: 'Gui', color: 'bg-[#FF7675]', type: 'receita' },
+    'lindezo': { icon: 'Heart', label: 'Lindezo', color: 'bg-[#FF7675]', type: 'receita' },
+    'airbnb': { icon: 'Home', label: 'Airbnb', color: 'bg-[#FF5A5F]', type: 'receita' },
     'mercado': { icon: 'ShoppingCart', label: 'Mercado', color: 'bg-[#F1C40F]', type: 'despesa' },
     'casa': { icon: 'Home', label: 'Casa', color: 'bg-[#3498DB]', type: 'despesa' },
     'saude': { icon: 'Heart', label: 'Saúde', color: 'bg-[#9B59B6]', type: 'despesa' },
@@ -102,7 +107,7 @@ export default function MinhaMerreca() {
     const [entryType, setEntryType] = useState('despesa'); // receita, despesa, transferencia
     const [amount, setAmount] = useState('0.00');
     const [description, setDescription] = useState('');
-    const [selectedCat, setSelectedCat] = useState('outros');
+    const [selectedCat, setSelectedCat] = useState('dani');
     const [selectedPayment, setSelectedPayment] = useState('PIX');
     const [entryDate, setEntryDate] = useState(now.toISOString().split('T')[0]);
     const [repeatType, setRepeatType] = useState('avista'); // avista, fixo, parcelado
@@ -158,8 +163,8 @@ export default function MinhaMerreca() {
 
     const totals = useMemo(() => {
         return filteredTransactions.reduce((acc, t) => {
-            if (t.type === 'receita') acc.income += t.amount;
-            else acc.expense += t.amount;
+            if (t.type === 'receita') acc.income += Number(t.amount) || 0;
+            else acc.expense += Number(t.amount) || 0;
             return acc;
         }, { income: 0, expense: 0 });
     }, [filteredTransactions]);
@@ -299,7 +304,7 @@ export default function MinhaMerreca() {
 
     const showToast = (msg) => {
         setFeedback(msg);
-        setTimeout(() => setFeedback(null), 2000);
+        setTimeout(() => setFeedback(null), 3000);
     };
 
     const resetForm = () => {
@@ -308,6 +313,7 @@ export default function MinhaMerreca() {
         setRepeatType('avista');
         setInstallments(1);
         setEditingId(null);
+        setSelectedCat(entryType === 'receita' ? 'dani' : 'outros');
     };
 
     const changeMonth = (offset) => {
@@ -382,7 +388,7 @@ export default function MinhaMerreca() {
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                     <div className="flex items-center gap-2">
                         <Calendar size={12} className="text-slate-300" />
-                        <span className="text-[11px] font-bold text-slate-500">{new Date(t.date + 'T12:00:00').toLocaleDateString()}</span>
+                        <span className="text-[11px] font-bold text-slate-500">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                         {t.repeatType && t.repeatType !== 'avista' && (
                             <span className="bg-gray-100 text-[9px] px-2 py-0.5 rounded-full font-bold text-slate-500 uppercase">
                                 {t.repeatType === 'parcelado' ? `${t.parcelasTotal}x` : 'Fixo'}
@@ -496,7 +502,7 @@ export default function MinhaMerreca() {
                             if (tab === 'receita') setSelectedCat('receita');
                             else setSelectedCat('outros');
                         }}
-                        className={`flex-1 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${entryType === tab ? 'text-[#2ECC71]' : 'text-gray-300'}`}
+                        className={`flex-1 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${entryType === tab ? (tab === 'receita' ? 'text-[#2ECC71] border-b-4 border-[#2ECC71]' : 'text-[#1F1F1F] border-b-4 border-[#1F1F1F]') : 'text-gray-300'}`}
                     >
                         {tab === 'transferencia' ? 'Transferência' : tab}
                     </button>
@@ -628,7 +634,17 @@ export default function MinhaMerreca() {
                 <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100 space-y-6 shadow-inner">
                     <div className="flex bg-white rounded-2xl p-1 border border-gray-100">
                         {['despesa', 'receita'].map(tab => (
-                            <button key={tab} onClick={() => { setEntryType(tab); if (tab === 'receita') setSelectedCat('receita'); else setSelectedCat('outros'); }} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${entryType === tab ? 'bg-[#1F1F1F] text-white' : 'text-gray-300'}`}>{tab}</button>
+                            <button
+                                key={tab}
+                                onClick={() => {
+                                    setEntryType(tab);
+                                    if (tab === 'receita') setSelectedCat('dani');
+                                    else setSelectedCat('outros');
+                                }}
+                                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${entryType === tab ? (tab === 'receita' ? 'bg-[#2ECC71] text-white shadow-lg' : 'bg-[#1F1F1F] text-white') : 'text-gray-300'}`}
+                            >
+                                {tab}
+                            </button>
                         ))}
                     </div>
 
@@ -655,7 +671,7 @@ export default function MinhaMerreca() {
 
                         <div className="grid grid-cols-2 gap-3">
                             <select value={selectedCat} onChange={e => setSelectedCat(e.target.value)} className="bg-white border border-gray-100 p-4 rounded-xl text-[10px] font-black uppercase tracking-wider outline-none text-gray-500 cursor-pointer">
-                                {Object.entries(categories).filter(([k, v]) => !['receita', 'despesa'].includes(v.label.toLowerCase())).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                {Object.entries(categories).filter(([k, v]) => !['receita', 'despesa'].includes(v.label.toLowerCase()) && v.type === entryType).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                             </select>
                             <select value={selectedPayment} onChange={e => setSelectedPayment(e.target.value)} className="bg-white border border-gray-100 p-4 rounded-xl text-[10px] font-black uppercase tracking-wider outline-none text-gray-500 cursor-pointer">
                                 {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -663,7 +679,7 @@ export default function MinhaMerreca() {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block px-1">Data (AAAA-MM-DD)</label>
+                            <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block px-1">Data (DD/MM/YY)</label>
                             <input
                                 type="text"
                                 placeholder="2026-01-30"
@@ -697,7 +713,10 @@ export default function MinhaMerreca() {
                         <div className="bg-white rounded-[3.5rem] shadow-xl border border-gray-100 overflow-hidden flex-1 flex flex-col">
                             <div className="p-4 border-b border-gray-50 flex items-center bg-gray-50/50 overflow-x-auto scrollbar-hide">
                                 <div className="flex items-center gap-4 min-w-max w-full text-gray-400">
-                                    <button onClick={() => setActiveFilters({ category: 'all', type: 'all', payment: 'all', transactionType: 'all' })} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${activeFilters.transactionType === 'all' && activeFilters.category === 'all' ? 'bg-[#2ECC71] text-white shadow-sm' : 'hover:text-gray-600'}`}>Tudo</button>
+                                    <button onClick={() => setActiveFilters({ category: 'all', type: 'all', payment: 'all', transactionType: 'all' })} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${activeFilters.transactionType === 'all' && activeFilters.category === 'all' && activeFilters.type === 'all' ? 'bg-[#2ECC71] text-white shadow-sm' : 'hover:text-gray-600'}`}>Tudo</button>
+                                    <span className="text-gray-200">|</span>
+                                    <button onClick={() => setActiveFilters({ ...activeFilters, transactionType: 'receita' })} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${activeFilters.transactionType === 'receita' ? 'bg-green-100 text-green-700' : 'hover:text-gray-600'}`}>Receitas</button>
+                                    <button onClick={() => setActiveFilters({ ...activeFilters, transactionType: 'despesa' })} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${activeFilters.transactionType === 'despesa' ? 'bg-red-100 text-red-700' : 'hover:text-gray-600'}`}>Despesas</button>
                                     <span className="text-gray-200">|</span>
                                     {['avista', 'fixo', 'parcelado'].map(f => (
                                         <button key={f} onClick={() => setActiveFilters({ ...activeFilters, type: f })} className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest ${activeFilters.type === f ? 'bg-gray-200 text-gray-800' : 'hover:text-gray-600'}`}>{f}</button>
@@ -740,7 +759,7 @@ export default function MinhaMerreca() {
                                                         </button>
                                                     </td>
                                                     <td className="px-8 py-6">
-                                                        <span className="text-slate-500 text-[11px] tabular-nums font-black">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                                                        <span className="text-slate-500 text-[11px] tabular-nums font-black">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                                                     </td>
                                                     <td className="px-8 py-6 text-slate-800">
                                                         <span>{t.description}</span>
@@ -967,10 +986,11 @@ export default function MinhaMerreca() {
                                 </select>
                             </div>
                             <div className="flex-1">
-                                <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mb-2">Pagamento</p>
-                                <select value={activeFilters.payment} onChange={e => setActiveFilters({ ...activeFilters, payment: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl outline-none text-xs font-bold text-gray-500">
-                                    <option value="all">Qualquer</option>
-                                    {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mb-2">Movimentação</p>
+                                <select value={activeFilters.transactionType} onChange={e => setActiveFilters({ ...activeFilters, transactionType: e.target.value })} className="w-full bg-gray-50 p-3 rounded-xl outline-none text-xs font-bold text-gray-500">
+                                    <option value="all">Tudo</option>
+                                    <option value="receita">Receitas</option>
+                                    <option value="despesa">Despesas</option>
                                 </select>
                             </div>
                         </div>
@@ -1028,7 +1048,7 @@ export default function MinhaMerreca() {
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
-                                            {!Object.keys(INITIAL_CATEGORIES).includes(k) && (
+                                            {!Object.keys(INITIAL_CATEGORIES).includes(k) && k !== 'dani' && k !== 'portipar' && k !== 'gui' && k !== 'lindezo' && k !== 'airbnb' && (
                                                 <button onClick={() => deleteCategory(k)} className="p-3 text-gray-200 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
                                             )}
                                         </div>
