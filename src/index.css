@@ -3,9 +3,12 @@
 @tailwind utilities;
 
 body {
-    background-color: #F8F9FA;
-    color: #2C3E50;
+    background-color: #FFFFFF;
+    color: #1E293B;
+    /* slate-800 for high contrast */
+    font-family: 'DM Sans', sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* Base input reset for big numbers */
