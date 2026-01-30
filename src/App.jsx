@@ -137,6 +137,25 @@ export default function MinhaMerreca() {
         }, { income: 0, expense: 0 });
     }, [filteredTransactions]);
 
+    const categoryStats = useMemo(() => {
+        const stats = {};
+        let totalExpenses = 0;
+        filteredTransactions.forEach(t => {
+            if (t.type === 'despesa') {
+                stats[t.category] = (stats[t.category] || 0) + t.amount;
+                totalExpenses += t.amount;
+            }
+        });
+        return Object.entries(stats)
+            .map(([cat, total]) => ({
+                id: cat,
+                total,
+                percent: totalExpenses > 0 ? (total / totalExpenses) * 100 : 0,
+                config: categories[cat] || categories['outros']
+            }))
+            .sort((a, b) => b.total - a.total);
+    }, [filteredTransactions, categories]);
+
     // --- ACTIONS ---
     const handleSave = async () => {
         const val = parseFloat(amount.replace(',', '.'));
@@ -236,27 +255,34 @@ export default function MinhaMerreca() {
     // --- UI COMPONENTS ---
 
     // Header com Seletor de Mês
-    const PeriodHeader = () => (
-        <div className="bg-white px-6 pt-12 pb-6 rounded-b-[2.5rem] shadow-[0_10px_30px_rgba(0,0,0,0.04)] sticky top-0 z-30">
-            <div className="flex items-center justify-between mb-6">
-                <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-50 rounded-full text-gray-400"><ChevronLeft size={20} /></button>
+    const PeriodHeader = ({ dark = false }) => (
+        <div className={`${dark ? 'bg-[#121212] text-white' : 'bg-white text-[#2C3E50]'} px-6 pt-12 pb-6 rounded-b-[2.5rem] shadow-sm sticky top-0 z-30`}>
+            <div className="flex items-center justify-between mb-4">
+                <button onClick={() => changeMonth(-1)} className={`p-2 rounded-full ${dark ? 'bg-white/5' : 'bg-gray-50'}`}><ChevronLeft size={20} /></button>
                 <div className="text-center">
-                    <h2 className="text-sm font-bold uppercase tracking-widest text-[#2ECC71]">{viewYear}</h2>
-                    <h1 className="text-xl font-bold text-[#2C3E50]">{MONTHS[viewMonth]}</h1>
+                    {dark && <h1 className="text-lg font-bold mb-4">Relatórios</h1>}
+                    <div className="flex items-center gap-4 bg-black/20 p-1 rounded-full px-4">
+                        <span className="text-xs font-bold opacity-40 uppercase">{MONTHS[(viewMonth - 1 + 12) % 12].slice(0, 3)}</span>
+                        <div className="bg-white/10 px-6 py-2 rounded-full">
+                            <span className="text-sm font-bold">{MONTHS[viewMonth]}</span>
+                        </div>
+                        <span className="text-xs font-bold opacity-40 uppercase">{MONTHS[(viewMonth + 1) % 12].slice(0, 3)}</span>
+                    </div>
                 </div>
-                <button onClick={() => changeMonth(1)} className="p-2 bg-gray-50 rounded-full text-gray-400"><ChevronRight size={20} /></button>
+                <button onClick={() => changeMonth(1)} className={`p-2 rounded-full ${dark ? 'bg-white/5' : 'bg-gray-50'}`}><ChevronRight size={20} /></button>
             </div>
-
-            <div className="flex gap-4">
-                <div className="flex-1 bg-green-50/50 p-4 rounded-3xl border border-green-100">
-                    <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Entrou</p>
-                    <p className="text-lg font-bold text-green-700">{formatBoleto(totals.income)}</p>
+            {!dark && (
+                <div className="flex gap-4 mt-4">
+                    <div className="flex-1 bg-green-50/50 p-4 rounded-3xl border border-green-100">
+                        <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Entrou</p>
+                        <p className="text-lg font-bold text-green-700">{formatBoleto(totals.income)}</p>
+                    </div>
+                    <div className="flex-1 bg-red-50/50 p-4 rounded-3xl border border-red-100">
+                        <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">Saiu</p>
+                        <p className="text-lg font-bold text-red-700">{formatBoleto(totals.expense)}</p>
+                    </div>
                 </div>
-                <div className="flex-1 bg-red-50/50 p-4 rounded-3xl border border-red-100">
-                    <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">Saiu</p>
-                    <p className="text-lg font-bold text-red-700">{formatBoleto(totals.expense)}</p>
-                </div>
-            </div>
+            )}
         </div>
     );
 
@@ -345,6 +371,54 @@ export default function MinhaMerreca() {
     };
 
     // --- MAIN VIEWS ---
+
+    if (view === 'REPORTS') return (
+        <div className="min-h-screen bg-[#1F1F1F] text-white flex flex-col animate-in fade-in duration-300">
+            <PeriodHeader dark={true} />
+
+            <div className="px-6 py-4 flex items-center justify-between text-xs font-bold text-white/30 uppercase tracking-widest border-b border-white/5">
+                <span>Considerando lançamentos não pagos</span>
+                <span className="text-[#2ECC71]">Alterar</span>
+            </div>
+
+            <div className="flex-1 p-6 space-y-6 overflow-y-auto pb-32">
+                {categoryStats.length > 0 ? (
+                    categoryStats.map(stat => (
+                        <div key={stat.id} className="flex items-center justify-between group">
+                            <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-full ${stat.config.color} flex items-center justify-center shadow-lg border-2 border-white/10`}>
+                                    <IconRenderer name={stat.config.icon} size={22} className="text-white" />
+                                </div>
+                                <h3 className="font-bold text-lg">{stat.config.label}</h3>
+                            </div>
+                            <div className="text-right">
+                                <p className="font-bold text-lg">{formatBoleto(stat.total)}</p>
+                                <p className="text-[10px] font-bold text-white/20">{stat.percent.toFixed(2)}%</p>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <div className="py-20 text-center opacity-20">
+                        <BarChart2 size={60} className="mx-auto mb-4" />
+                        <p className="font-bold uppercase tracking-widest text-sm">Sem dados este mês</p>
+                    </div>
+                )}
+            </div>
+
+            <div className="fixed bottom-0 left-0 right-0 bg-[#121212] border-t border-white/5 flex justify-around p-5 z-40 rounded-t-[2.5rem]">
+                <button onClick={() => setView('HOME')} className="p-2 text-white/20"><Home size={26} /></button>
+                <button onClick={() => setView('REPORTS')} className="p-2 text-[#2ECC71]"><BarChart2 size={26} /></button>
+                <div className="w-16"></div>
+                <button onClick={() => setView('CAT_MGMT')} className="p-2 text-white/20"><Settings size={26} /></button>
+            </div>
+
+            <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
+                <button onClick={() => { resetForm(); setView('ENTRY'); }} className="w-16 h-16 bg-[#2ECC71] rounded-full flex items-center justify-center shadow-2xl border-4 border-[#1F1F1F]">
+                    <Plus size={32} className="text-white" strokeWidth={3} />
+                </button>
+            </div>
+        </div>
+    );
 
     if (view === 'ENTRY') return (
         <div className="min-h-screen bg-[#1F1F1F] text-white flex flex-col animate-in slide-in-from-bottom duration-300">
@@ -537,7 +611,8 @@ export default function MinhaMerreca() {
             {/* Bottom Nav */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around p-5 z-40 rounded-t-[2.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.02)]">
                 <button onClick={() => setView('HOME')} className={`p-2 transition-all ${view === 'HOME' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Home size={26} strokeWidth={2.5} /></button>
-                <div className="w-20"></div>
+                <button onClick={() => setView('REPORTS')} className={`p-2 transition-all ${view === 'REPORTS' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><BarChart2 size={26} strokeWidth={2.5} /></button>
+                <div className="w-16"></div>
                 <button onClick={() => setView('CAT_MGMT')} className={`p-2 transition-all ${view === 'CAT_MGMT' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Settings size={26} strokeWidth={2.5} /></button>
             </div>
 
