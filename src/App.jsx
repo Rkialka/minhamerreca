@@ -604,15 +604,22 @@ export default function MinhaMerreca() {
                 </div>
 
                 <nav className="flex-1 space-y-2">
-                    <button onClick={() => setView('HOME')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'HOME' ? 'bg-[#2ECC71] text-white shadow-lg' : 'hover:bg-white/5 text-white/40'}`}>
-                        <Home size={20} /> Dashboard
+                    <button onClick={() => { resetForm(); setView('ENTRY'); }} className="w-full flex items-center gap-4 p-5 rounded-2xl font-black bg-[#2ECC71] text-white shadow-lg shadow-green-900/20 mb-8 active:scale-95 transition-all">
+                        <Plus size={20} strokeWidth={3} /> LANÇAR AGORA
                     </button>
-                    <button onClick={() => setView('REPORTS')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'REPORTS' ? 'bg-[#2ECC71] text-white shadow-lg' : 'hover:bg-white/5 text-white/40'}`}>
-                        <BarChart2 size={20} /> Relatórios
-                    </button>
-                    <button onClick={() => setView('CAT_MGMT')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'CAT_MGMT' ? 'bg-[#2ECC71] text-white shadow-lg' : 'hover:bg-white/5 text-white/40'}`}>
-                        <Settings size={20} /> Categorias
-                    </button>
+
+                    <div className="pt-4 space-y-1">
+                        <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.2em] px-4 mb-2">Menu Principal</p>
+                        <button onClick={() => setView('HOME')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'HOME' ? 'bg-white/10 text-white shadow-xl' : 'hover:bg-white/5 text-white/40'}`}>
+                            <Home size={20} /> Dashboard
+                        </button>
+                        <button onClick={() => setView('REPORTS')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'REPORTS' ? 'bg-white/10 text-white shadow-xl' : 'hover:bg-white/5 text-white/40'}`}>
+                            <BarChart2 size={20} /> Relatórios
+                        </button>
+                        <button onClick={() => setView('CAT_MGMT')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'CAT_MGMT' ? 'bg-white/10 text-white shadow-xl' : 'hover:bg-white/5 text-white/40'}`}>
+                            <Settings size={20} /> Categorias
+                        </button>
+                    </div>
                 </nav>
 
                 <div className="mt-auto bg-white/5 p-6 rounded-[2rem] border border-white/5">
@@ -634,13 +641,22 @@ export default function MinhaMerreca() {
             <main className="flex-1 p-12 overflow-y-auto">
                 <header className="flex items-center justify-between mb-12">
                     <div>
-                        <h2 className="text-3xl font-black text-[#1F1F1F]">{MONTHS[viewMonth]} <span className="text-[#2ECC71] tracking-tighter">{viewYear}</span></h2>
-                        <p className="font-bold text-gray-400 text-sm uppercase tracking-widest mt-1">Modo Planilha Ativado</p>
+                        <h2 className="text-3xl font-black text-[#1F1F1F] uppercase tracking-tighter">{MONTHS[viewMonth]} <span className="text-[#2ECC71]">{viewYear}</span></h2>
+                        <p className="font-bold text-gray-400 text-xs uppercase tracking-widest mt-1">Spreadsheet Mode</p>
                     </div>
                     <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-                        <button onClick={() => changeMonth(-1)} className="p-3 hover:bg-gray-50 rounded-xl transition-colors"><ChevronLeft size={20} /></button>
-                        <div className="px-4 font-black text-sm uppercase tracking-widest">{MONTHS[viewMonth]}</div>
-                        <button onClick={() => changeMonth(1)} className="p-3 hover:bg-gray-50 rounded-xl transition-colors"><ChevronRight size={20} /></button>
+                        {/* Selector de Mês */}
+                        <div className="flex items-center gap-2 px-2 border-r border-gray-100">
+                            <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-50 rounded-xl transition-colors"><ChevronLeft size={16} /></button>
+                            <span className="w-24 text-center font-black text-xs uppercase tracking-widest">{MONTHS[viewMonth]}</span>
+                            <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-50 rounded-xl transition-colors"><ChevronRight size={16} /></button>
+                        </div>
+                        {/* Selector de Ano */}
+                        <div className="flex items-center gap-2 px-2">
+                            <button onClick={() => setViewYear(prev => prev - 1)} className="p-2 hover:bg-gray-50 rounded-xl transition-colors"><ChevronLeft size={16} /></button>
+                            <span className="w-16 text-center font-black text-xs uppercase tracking-widest">{viewYear}</span>
+                            <button onClick={() => setViewYear(prev => prev + 1)} className="p-2 hover:bg-gray-50 rounded-xl transition-colors"><ChevronRight size={16} /></button>
+                        </div>
                     </div>
                 </header>
 
@@ -683,6 +699,8 @@ export default function MinhaMerreca() {
                                     <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('date')}>Data {sortConfig.key === 'date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('description')}>Descrição {sortConfig.key === 'description' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('category')}>Categoria {sortConfig.key === 'category' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('repeatType')}>Tipo {sortConfig.key === 'repeatType' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="px-8 py-6 text-center cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('parcelasTotal')}>Parcelas {sortConfig.key === 'parcelasTotal' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('paymentMethod')}>Pagamento {sortConfig.key === 'paymentMethod' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors text-right" onClick={() => toggleSort('amount')}>Valor {sortConfig.key === 'amount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th className="px-8 py-6">Ações</th>
@@ -720,6 +738,20 @@ export default function MinhaMerreca() {
                                                         <span className="text-gray-600">{cat.label}</span>
                                                     </div>
                                                 )}
+                                            </td>
+                                            <td className="px-8 py-5" onDoubleClick={() => setEditingCell({ id: t.id, field: 'repeatType' })}>
+                                                {editingCell?.id === t.id && editingCell.field === 'repeatType' ? (
+                                                    <select defaultValue={t.repeatType || 'avista'} autoFocus onBlur={(e) => handleInlineUpdate(t.id, 'repeatType', e.target.value)} onChange={(e) => handleInlineUpdate(t.id, 'repeatType', e.target.value)} className="bg-gray-100 p-1 rounded outline-none border border-[#2ECC71] text-[10px] uppercase">
+                                                        <option value="avista">Única</option>
+                                                        <option value="fixo">Fixo</option>
+                                                        <option value="parcelado">Parcelado</option>
+                                                    </select>
+                                                ) : <span className="text-gray-400 uppercase text-[10px]">{t.repeatType === 'avista' || !t.repeatType ? 'Única' : t.repeatType}</span>}
+                                            </td>
+                                            <td className="px-8 py-5 text-center">
+                                                <span className="text-gray-400 text-xs font-black">
+                                                    {t.repeatType === 'parcelado' ? `${t.parcelaNum || 1}x/${t.parcelasTotal || 1}x` : '1x'}
+                                                </span>
                                             </td>
                                             <td className="px-8 py-5 text-gray-400" onDoubleClick={() => setEditingCell({ id: t.id, field: 'paymentMethod' })}>
                                                 {editingCell?.id === t.id && editingCell.field === 'paymentMethod' ? (
