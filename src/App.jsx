@@ -58,6 +58,8 @@ export default function MinhaMerreca() {
     const [loading, setLoading] = useState(true);
     const [feedback, setFeedback] = useState(null);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+    const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+    const [editingCell, setEditingCell] = useState(null); // { id: '...', field: '...' }
 
     // Monitorar tamanho da tela
     useEffect(() => {
@@ -127,15 +129,32 @@ export default function MinhaMerreca() {
 
     // --- COMPUTED DATA ---
     const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
+        let result = transactions.filter(t => {
             const d = new Date(t.date + 'T12:00:00');
             const matchPeriod = d.getMonth() === viewMonth && d.getFullYear() === viewYear;
             const matchCat = activeFilters.category === 'all' || t.category === activeFilters.category;
             const matchType = activeFilters.type === 'all' || t.repeatType === activeFilters.type;
             const matchPayment = activeFilters.payment === 'all' || t.paymentMethod === activeFilters.payment;
             return matchPeriod && matchCat && matchType && matchPayment;
-        }).sort((a, b) => new Date(b.date) - new Date(a.date));
-    }, [transactions, viewMonth, viewYear, activeFilters]);
+        });
+
+        // Sorting
+        result.sort((a, b) => {
+            let valA = a[sortConfig.key];
+            let valB = b[sortConfig.key];
+
+            if (sortConfig.key === 'category') {
+                valA = categories[a.category]?.label || '';
+                valB = categories[b.category]?.label || '';
+            }
+
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return result;
+    }, [transactions, viewMonth, viewYear, activeFilters, sortConfig, categories]);
 
     const totals = useMemo(() => {
         return filteredTransactions.reduce((acc, t) => {
@@ -376,6 +395,22 @@ export default function MinhaMerreca() {
             color: 'bg-[#7F8C8D]',
             type: 'despesa'
         });
+    };
+
+    const handleInlineUpdate = async (id, field, value) => {
+        try {
+            await updateDoc(doc(db, "transactions", id), { [field]: value, updatedAt: serverTimestamp() });
+            setEditingCell(null);
+        } catch (e) {
+            alert("Erro ao atualizar: " + e.message);
+        }
+    };
+
+    const toggleSort = (key) => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+        }));
     };
 
     // --- MAIN VIEWS ---
@@ -629,11 +664,11 @@ export default function MinhaMerreca() {
                             <thead>
                                 <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50">
                                     <th className="px-8 py-6">Status</th>
-                                    <th className="px-8 py-6">Data</th>
-                                    <th className="px-8 py-6">Descrição</th>
-                                    <th className="px-8 py-6">Categoria</th>
-                                    <th className="px-8 py-6">Pagamento</th>
-                                    <th className="px-8 py-6 text-right">Valor</th>
+                                    <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('date')}>Data {sortConfig.key === 'date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('description')}>Descrição {sortConfig.key === 'description' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('category')}>Categoria {sortConfig.key === 'category' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors" onClick={() => toggleSort('paymentMethod')}>Pagamento {sortConfig.key === 'paymentMethod' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                                    <th className="px-8 py-6 cursor-pointer hover:text-[#2ECC71] transition-colors text-right" onClick={() => toggleSort('amount')}>Valor {sortConfig.key === 'amount' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                                     <th className="px-8 py-6">Ações</th>
                                 </tr>
                             </thead>
@@ -648,31 +683,44 @@ export default function MinhaMerreca() {
                                                     <Check size={16} strokeWidth={3} />
                                                 </button>
                                             </td>
-                                            <td className="px-8 py-5 text-gray-400 text-xs">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                                            <td className="px-8 py-5 text-[#1F1F1F]">{t.description}</td>
-                                            <td className="px-8 py-5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`w-2 h-2 rounded-full ${cat.color}`}></div>
-                                                    <span className="text-gray-600">{cat.label}</span>
-                                                </div>
+                                            <td className="px-8 py-5" onDoubleClick={() => setEditingCell({ id: t.id, field: 'date' })}>
+                                                {editingCell?.id === t.id && editingCell.field === 'date' ? (
+                                                    <input type="date" value={t.date} autoFocus onBlur={(e) => handleInlineUpdate(t.id, 'date', e.target.value)} className="bg-gray-100 p-1 rounded outline-none border border-[#2ECC71]" />
+                                                ) : <span className="text-gray-400 text-xs">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>}
                                             </td>
-                                            <td className="px-8 py-5 text-gray-400 uppercase text-[10px]">{pay.label}</td>
-                                            <td className={`px-8 py-5 text-right text-lg font-black ${t.type === 'receita' ? 'text-green-500' : 'text-red-500'}`}>
-                                                {t.type === 'receita' ? '+' : '-'} {formatBoleto(t.amount)}
+                                            <td className="px-8 py-5 text-[#1F1F1F]" onDoubleClick={() => setEditingCell({ id: t.id, field: 'description' })}>
+                                                {editingCell?.id === t.id && editingCell.field === 'description' ? (
+                                                    <input type="text" defaultValue={t.description} autoFocus onBlur={(e) => handleInlineUpdate(t.id, 'description', e.target.value)} onKeyDown={e => e.key === 'Enter' && handleInlineUpdate(t.id, 'description', e.target.value)} className="w-full bg-gray-100 p-1 rounded outline-none border border-[#2ECC71]" />
+                                                ) : t.description}
+                                            </td>
+                                            <td className="px-8 py-5" onDoubleClick={() => setEditingCell({ id: t.id, field: 'category' })}>
+                                                {editingCell?.id === t.id && editingCell.field === 'category' ? (
+                                                    <select defaultValue={t.category} autoFocus onBlur={(e) => handleInlineUpdate(t.id, 'category', e.target.value)} onChange={(e) => handleInlineUpdate(t.id, 'category', e.target.value)} className="bg-gray-100 p-1 rounded outline-none border border-[#2ECC71]">
+                                                        {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`w-2 h-2 rounded-full ${cat.color}`}></div>
+                                                        <span className="text-gray-600">{cat.label}</span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-8 py-5 text-gray-400" onDoubleClick={() => setEditingCell({ id: t.id, field: 'paymentMethod' })}>
+                                                {editingCell?.id === t.id && editingCell.field === 'paymentMethod' ? (
+                                                    <select defaultValue={t.paymentMethod} autoFocus onBlur={(e) => handleInlineUpdate(t.id, 'paymentMethod', e.target.value)} onChange={(e) => handleInlineUpdate(t.id, 'paymentMethod', e.target.value)} className="bg-gray-100 p-1 rounded outline-none border border-[#2ECC71] text-xs uppercase">
+                                                        {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                                    </select>
+                                                ) : <span className="uppercase text-[10px]">{pay.label}</span>}
+                                            </td>
+                                            <td className={`px-8 py-5 text-right text-lg font-black ${t.type === 'receita' ? 'text-green-500' : 'text-red-500'}`} onDoubleClick={() => setEditingCell({ id: t.id, field: 'amount' })}>
+                                                {editingCell?.id === t.id && editingCell.field === 'amount' ? (
+                                                    <input type="text" defaultValue={t.amount} autoFocus onBlur={(e) => handleInlineUpdate(t.id, 'amount', parseFloat(e.target.value.replace(',', '.')) || 0)} onKeyDown={e => e.key === 'Enter' && handleInlineUpdate(t.id, 'amount', parseFloat(e.target.value.replace(',', '.')) || 0)} className="w-24 bg-gray-100 p-1 rounded outline-none border border-[#2ECC71] text-right" />
+                                                ) : (
+                                                    <>{t.type === 'receita' ? '+' : '-'} {formatBoleto(t.amount)}</>
+                                                )}
                                             </td>
                                             <td className="px-8 py-5">
                                                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={() => {
-                                                        setEditingId(t.id);
-                                                        setAmount(t.amount.toString());
-                                                        setDescription(t.description);
-                                                        setSelectedCat(t.category);
-                                                        setSelectedPayment(t.paymentMethod);
-                                                        setEntryDate(t.date);
-                                                        setEntryType(t.type);
-                                                        setRepeatType(t.repeatType || 'avista');
-                                                        setView('ENTRY');
-                                                    }} className="p-2 text-gray-300 hover:text-[#2ECC71]"><Edit2 size={16} /></button>
                                                     <button onClick={() => handleDelete(t.id)} className="p-2 text-gray-300 hover:text-red-500"><Trash2 size={16} /></button>
                                                 </div>
                                             </td>
