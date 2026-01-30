@@ -95,8 +95,9 @@ export default function MinhaMerreca() {
     const [filterMenuOpen, setFilterMenuOpen] = useState(false);
     const [activeFilters, setActiveFilters] = useState({
         category: 'all',
-        type: 'all', // avista, fixo, parcelado
-        payment: 'all'
+        type: 'all', // Repetição/Frequência
+        payment: 'all',
+        transactionType: 'all' // Receita vs Despesa
     });
 
     // Form State
@@ -135,7 +136,8 @@ export default function MinhaMerreca() {
             const matchCat = activeFilters.category === 'all' || t.category === activeFilters.category;
             const matchType = activeFilters.type === 'all' || t.repeatType === activeFilters.type;
             const matchPayment = activeFilters.payment === 'all' || t.paymentMethod === activeFilters.payment;
-            return matchPeriod && matchCat && matchType && matchPayment;
+            const matchTxType = activeFilters.transactionType === 'all' || t.type === activeFilters.transactionType;
+            return matchPeriod && matchCat && matchType && matchPayment && matchTxType;
         });
 
         // Sorting
@@ -644,18 +646,32 @@ export default function MinhaMerreca() {
 
                 {/* Dashboard Desktop */}
                 <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                        <div className="flex items-center gap-6">
-                            <button onClick={() => { resetForm(); setView('ENTRY'); }} className="bg-[#2ECC71] text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-green-200 active:scale-95 transition-all">
-                                <Plus size={20} strokeWidth={3} /> LANÇAR AGORA
-                            </button>
-                            <div className="h-10 w-px bg-gray-200"></div>
-                            <div className="flex gap-4">
-                                <span className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeFilters.category === 'all' ? 'bg-[#1F1F1F] text-white' : 'bg-white text-gray-400 border border-gray-100'}`} onClick={() => setActiveFilters({ ...activeFilters, category: 'all' })}>Tudo</span>
-                                {Object.entries(categories).slice(0, 5).map(([k, v]) => (
-                                    <span key={k} className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeFilters.category === k ? 'bg-[#1F1F1F] text-white' : 'bg-white text-gray-400 border border-gray-100'}`} onClick={() => setActiveFilters({ ...activeFilters, category: k })}>{v.label}</span>
-                                ))}
-                            </div>
+                    <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 overflow-x-auto">
+                        <div className="flex items-center gap-3 min-w-max">
+                            <span
+                                onClick={() => setActiveFilters({ category: 'all', type: 'all', payment: 'all', transactionType: 'all' })}
+                                className={`px-5 py-2.5 rounded-2xl text-xs font-black cursor-pointer transition-all ${activeFilters.transactionType === 'all' && activeFilters.category === 'all' ? 'bg-[#1F1F1F] text-white shadow-xl' : 'bg-white text-gray-400 border border-gray-100 hover:border-gray-300'}`}
+                            >Tudo</span>
+
+                            <span
+                                onClick={() => setActiveFilters({ ...activeFilters, transactionType: 'receita', category: 'all' })}
+                                className={`px-5 py-2.5 rounded-2xl text-xs font-black cursor-pointer transition-all ${activeFilters.transactionType === 'receita' ? 'bg-[#1F1F1F] text-[#2ECC71] shadow-xl' : 'bg-white text-[#2ECC71] border border-gray-100 hover:border-green-200'}`}
+                            >Receita</span>
+
+                            <span
+                                onClick={() => setActiveFilters({ ...activeFilters, transactionType: 'despesa', category: 'all' })}
+                                className={`px-5 py-2.5 rounded-2xl text-xs font-black cursor-pointer transition-all ${activeFilters.transactionType === 'despesa' ? 'bg-[#1F1F1F] text-[#E74C3C] shadow-xl' : 'bg-white text-[#E74C3C] border border-gray-100 hover:border-red-200'}`}
+                            >Despesas</span>
+
+                            <div className="h-6 w-px bg-gray-200 mx-2"></div>
+
+                            {Object.entries(categories).map(([k, v]) => (
+                                <span
+                                    key={k}
+                                    onClick={() => setActiveFilters({ ...activeFilters, category: k, transactionType: 'all' })}
+                                    className={`px-5 py-2.5 rounded-2xl text-xs font-black cursor-pointer transition-all ${activeFilters.category === k ? 'bg-[#1F1F1F] text-white shadow-xl' : 'bg-white text-gray-400 border border-gray-100 hover:border-gray-300'}`}
+                                >{v.label}</span>
+                            ))}
                         </div>
                     </div>
 
@@ -679,8 +695,8 @@ export default function MinhaMerreca() {
                                     return (
                                         <tr key={t.id} className="hover:bg-gray-50/80 transition-colors group cursor-default">
                                             <td className="px-8 py-5">
-                                                <button onClick={() => toggleStatus(t)} className={`p-2 rounded-xl transition-all ${t.status === 'pago' ? 'bg-green-100 text-green-600' : 'bg-red-50 text-red-400'}`}>
-                                                    <Check size={16} strokeWidth={3} />
+                                                <button onClick={() => toggleStatus(t)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${t.status === 'pago' ? 'bg-green-100 text-[#2ECC71]' : 'bg-red-50 text-[#E74C3C]'}`}>
+                                                    {t.status === 'pago' ? 'Pago' : 'Não Pago'}
                                                 </button>
                                             </td>
                                             <td className="px-8 py-5" onDoubleClick={() => setEditingCell({ id: t.id, field: 'date' })}>
