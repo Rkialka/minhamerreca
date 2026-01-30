@@ -57,6 +57,14 @@ export default function MinhaMerreca() {
     const [categories, setCategories] = useState(INITIAL_CATEGORIES);
     const [loading, setLoading] = useState(true);
     const [feedback, setFeedback] = useState(null);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+    // Monitorar tamanho da tela
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 1024);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // Sync Categorias do Firebase
     useEffect(() => {
@@ -541,6 +549,217 @@ export default function MinhaMerreca() {
                 </button>
                 <button onClick={() => setView('HOME')} className="absolute left-8 top-1/2 -translate-y-1/2 p-2 text-white/20 hover:text-white"><X size={24} /></button>
             </div>
+        </div>
+    );
+
+    // --- DESKTOP LAYOUT ---
+    if (!isMobile) return (
+        <div className="min-h-screen bg-[#F0F2F5] flex font-sans text-[#2C3E50]">
+            {/* Sidebar */}
+            <aside className="w-80 bg-[#1F1F1F] text-white p-8 flex flex-col sticky h-screen top-0 shadow-2xl">
+                <div className="mb-12">
+                    <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2 italic">
+                        <div className="w-8 h-8 bg-[#2ECC71] rounded-lg rotate-12 flex items-center justify-center">
+                            <DollarSign size={20} className="text-white -rotate-12" />
+                        </div>
+                        MINHA<span className="text-[#2ECC71]">MERRECA</span>
+                    </h1>
+                </div>
+
+                <nav className="flex-1 space-y-2">
+                    <button onClick={() => setView('HOME')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'HOME' ? 'bg-[#2ECC71] text-white shadow-lg' : 'hover:bg-white/5 text-white/40'}`}>
+                        <Home size={20} /> Dashboard
+                    </button>
+                    <button onClick={() => setView('REPORTS')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'REPORTS' ? 'bg-[#2ECC71] text-white shadow-lg' : 'hover:bg-white/5 text-white/40'}`}>
+                        <BarChart2 size={20} /> Relatórios
+                    </button>
+                    <button onClick={() => setView('CAT_MGMT')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${view === 'CAT_MGMT' ? 'bg-[#2ECC71] text-white shadow-lg' : 'hover:bg-white/5 text-white/40'}`}>
+                        <Settings size={20} /> Categorias
+                    </button>
+                </nav>
+
+                <div className="mt-auto bg-white/5 p-6 rounded-[2rem] border border-white/5">
+                    <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest mb-4">Resumo do Mês</p>
+                    <div className="space-y-4">
+                        <div>
+                            <p className="text-xs font-bold text-green-500 mb-1">Entradas</p>
+                            <p className="text-xl font-black">{formatBoleto(totals.income)}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-red-500 mb-1">Saídas</p>
+                            <p className="text-xl font-black">{formatBoleto(totals.expense)}</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            {/* Main Content */}
+            <main className="flex-1 p-12 overflow-y-auto">
+                <header className="flex items-center justify-between mb-12">
+                    <div>
+                        <h2 className="text-3xl font-black text-[#1F1F1F]">{MONTHS[viewMonth]} <span className="text-[#2ECC71] tracking-tighter">{viewYear}</span></h2>
+                        <p className="font-bold text-gray-400 text-sm uppercase tracking-widest mt-1">Modo Planilha Ativado</p>
+                    </div>
+                    <div className="flex items-center gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+                        <button onClick={() => changeMonth(-1)} className="p-3 hover:bg-gray-50 rounded-xl transition-colors"><ChevronLeft size={20} /></button>
+                        <div className="px-4 font-black text-sm uppercase tracking-widest">{MONTHS[viewMonth]}</div>
+                        <button onClick={() => changeMonth(1)} className="p-3 hover:bg-gray-50 rounded-xl transition-colors"><ChevronRight size={20} /></button>
+                    </div>
+                </header>
+
+                {/* Dashboard Desktop */}
+                <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                        <div className="flex items-center gap-6">
+                            <button onClick={() => { resetForm(); setView('ENTRY'); }} className="bg-[#2ECC71] text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-green-200 active:scale-95 transition-all">
+                                <Plus size={20} strokeWidth={3} /> LANÇAR AGORA
+                            </button>
+                            <div className="h-10 w-px bg-gray-200"></div>
+                            <div className="flex gap-4">
+                                <span className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeFilters.category === 'all' ? 'bg-[#1F1F1F] text-white' : 'bg-white text-gray-400 border border-gray-100'}`} onClick={() => setActiveFilters({ ...activeFilters, category: 'all' })}>Tudo</span>
+                                {Object.entries(categories).slice(0, 5).map(([k, v]) => (
+                                    <span key={k} className={`px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all ${activeFilters.category === k ? 'bg-[#1F1F1F] text-white' : 'bg-white text-gray-400 border border-gray-100'}`} onClick={() => setActiveFilters({ ...activeFilters, category: k })}>{v.label}</span>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-50">
+                                    <th className="px-8 py-6">Status</th>
+                                    <th className="px-8 py-6">Data</th>
+                                    <th className="px-8 py-6">Descrição</th>
+                                    <th className="px-8 py-6">Categoria</th>
+                                    <th className="px-8 py-6">Pagamento</th>
+                                    <th className="px-8 py-6 text-right">Valor</th>
+                                    <th className="px-8 py-6">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50 font-bold text-sm">
+                                {filteredTransactions.map(t => {
+                                    const cat = categories[t.category] || categories['outros'];
+                                    const pay = PAYMENT_METHODS[t.paymentMethod] || PAYMENT_METHODS['PIX'];
+                                    return (
+                                        <tr key={t.id} className="hover:bg-gray-50/80 transition-colors group cursor-default">
+                                            <td className="px-8 py-5">
+                                                <button onClick={() => toggleStatus(t)} className={`p-2 rounded-xl transition-all ${t.status === 'pago' ? 'bg-green-100 text-green-600' : 'bg-red-50 text-red-400'}`}>
+                                                    <Check size={16} strokeWidth={3} />
+                                                </button>
+                                            </td>
+                                            <td className="px-8 py-5 text-gray-400 text-xs">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                                            <td className="px-8 py-5 text-[#1F1F1F]">{t.description}</td>
+                                            <td className="px-8 py-5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`w-2 h-2 rounded-full ${cat.color}`}></div>
+                                                    <span className="text-gray-600">{cat.label}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-5 text-gray-400 uppercase text-[10px]">{pay.label}</td>
+                                            <td className={`px-8 py-5 text-right text-lg font-black ${t.type === 'receita' ? 'text-green-500' : 'text-red-500'}`}>
+                                                {t.type === 'receita' ? '+' : '-'} {formatBoleto(t.amount)}
+                                            </td>
+                                            <td className="px-8 py-5">
+                                                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={() => {
+                                                        setEditingId(t.id);
+                                                        setAmount(t.amount.toString());
+                                                        setDescription(t.description);
+                                                        setSelectedCat(t.category);
+                                                        setSelectedPayment(t.paymentMethod);
+                                                        setEntryDate(t.date);
+                                                        setEntryType(t.type);
+                                                        setRepeatType(t.repeatType || 'avista');
+                                                        setView('ENTRY');
+                                                    }} className="p-2 text-gray-300 hover:text-[#2ECC71]"><Edit2 size={16} /></button>
+                                                    <button onClick={() => handleDelete(t.id)} className="p-2 text-gray-300 hover:text-red-500"><Trash2 size={16} /></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                        {!loading && filteredTransactions.length === 0 && (
+                            <div className="py-32 text-center text-gray-300 flex flex-col items-center">
+                                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+                                    <AlertCircle size={40} />
+                                </div>
+                                <p className="font-black text-xl tracking-tight text-gray-400">Nenhuma merreca encontrada</p>
+                                <p className="text-sm font-bold mt-1">Ajuste os filtros ou mude o mês.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </main>
+
+            {/* Overlays / Modals */}
+            {view === 'ENTRY' && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="w-[500px] h-full bg-[#1F1F1F] shadow-2xl animate-in slide-in-from-right duration-500">
+                        {/* Aqui reutilizamos a UI de ENTRY que já temos */}
+                        <div className="h-full flex flex-col">
+                            <div className="p-8 border-b border-white/5 flex items-center justify-between">
+                                <h1 className="text-xl font-black italic">NOVO <span className="text-[#2ECC71]">LANÇAMENTO</span></h1>
+                                <button onClick={() => setView('HOME')} className="text-white/20 hover:text-white"><X size={24} /></button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto">
+                                {/* O conteúdo do ENTRY Mobile funciona bem aqui no painel lateral */}
+                                {view === 'ENTRY' && (
+                                    <div className="p-0"> {/* Wrapper para evitar conflito de padding */}
+                                        {/* Copiamos apenas a lógica de renderização do ENTRY Mobile aqui */}
+                                        {/* Tabs */}
+                                        <div className="flex border-b border-white/5">
+                                            {['despesa', 'receita', 'transferencia'].map(tab => (
+                                                <button key={tab} onClick={() => { setEntryType(tab); if (tab === 'receita') setSelectedCat('receita'); else setSelectedCat('outros'); }} className={`flex-1 py-6 text-[10px] font-black uppercase tracking-widest transition-all ${entryType === tab ? 'border-b-4 border-[#2ECC71] text-white' : 'text-white/20'}`}>{tab}</button>
+                                            ))}
+                                        </div>
+                                        {/* Amount */}
+                                        <div className="p-12 text-center bg-black/20">
+                                            <div className="relative inline-flex items-center gap-4 cursor-text" onClick={() => amountInputRef.current?.focus()}>
+                                                <span className="text-7xl font-black tracking-tighter">{amount || '0,00'}</span>
+                                                <Edit2 size={24} className="text-white/10" />
+                                            </div>
+                                            <input ref={amountInputRef} type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^0-9.,]/g, ''))} className="opacity-0 w-0 h-0" autoFocus />
+                                        </div>
+                                        {/* Fields */}
+                                        <div className="p-8 space-y-8">
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Descrição</p>
+                                                <input placeholder={selectedCat === 'receita' ? "Quem pagou?" : "O que você comprou?"} value={description} onChange={e => setDescription(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl font-bold outline-none focus:border-[#2ECC71]/50" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Categoria</p>
+                                                    <select value={selectedCat} onChange={e => setSelectedCat(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl font-bold outline-none appearance-none">
+                                                        {Object.entries(categories).map(([k, v]) => <option key={k} value={k} className="text-black">{v.label}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Pagamento</p>
+                                                    <select value={selectedPayment} onChange={e => setSelectedPayment(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl font-bold outline-none appearance-none">
+                                                        {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k} className="text-black">{v.label}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] font-black text-white/20 uppercase tracking-widest">Data</p>
+                                                <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl font-bold outline-none" />
+                                            </div>
+                                            <button onClick={handleSave} className="w-full bg-[#2ECC71] text-white py-6 rounded-3xl font-black text-lg shadow-xl shadow-green-900/20 active:scale-95 transition-all">SALVAR LANÇAMENTO</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {feedback && (
+                <div className="fixed bottom-12 right-12 z-[200] bg-[#2ECC71] text-white px-8 py-4 rounded-2xl font-black shadow-2xl animate-in slide-in-from-right duration-300"> {feedback} </div>
+            )}
         </div>
     );
 
