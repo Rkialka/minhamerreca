@@ -102,6 +102,9 @@ export default function MinhaMerreca() {
     // Edição
     const [editingId, setEditingId] = useState(null);
 
+    // Refs
+    const amountInputRef = React.useRef(null);
+
     // --- FIREBASE SYNC ---
     useEffect(() => {
         setLoading(true);
@@ -136,8 +139,8 @@ export default function MinhaMerreca() {
 
     // --- ACTIONS ---
     const handleSave = async () => {
-        const val = parseFloat(amount);
-        if (val <= 0) return;
+        const val = parseFloat(amount.replace(',', '.'));
+        if (isNaN(val) || val <= 0) return;
 
         const baseData = {
             amount: val,
@@ -212,7 +215,7 @@ export default function MinhaMerreca() {
     };
 
     const resetForm = () => {
-        setAmount('0.00');
+        setAmount('');
         setDescription('');
         setRepeatType('avista');
         setInstallments(1);
@@ -350,7 +353,11 @@ export default function MinhaMerreca() {
                 {['despesa', 'receita', 'transferencia'].map(tab => (
                     <button
                         key={tab}
-                        onClick={() => setEntryType(tab)}
+                        onClick={() => {
+                            setEntryType(tab);
+                            if (tab === 'receita') setSelectedCat('receita');
+                            else setSelectedCat('outros');
+                        }}
                         className={`flex-1 py-5 text-xs font-bold uppercase tracking-widest transition-all ${entryType === tab ? 'border-b-2 border-white text-white' : 'text-white/30'}`}
                     >
                         {tab === 'transferencia' ? 'Transferência' : tab}
@@ -359,17 +366,30 @@ export default function MinhaMerreca() {
             </div>
 
             {/* Amount display */}
-            <div className="p-12 text-center relative">
-                <div className="relative inline-flex items-center gap-4">
-                    <span className="text-6xl font-black text-white">{amount}</span>
-                    <button className="text-white/20"><Edit2 size={24} /></button>
+            <div className="p-12 text-center relative flex flex-col items-center">
+                <div
+                    className="relative inline-flex items-center gap-4 cursor-text"
+                    onClick={() => amountInputRef.current?.focus()}
+                >
+                    <span className="text-6xl font-black text-white">{amount || '0.00'}</span>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); amountInputRef.current?.focus(); }}
+                        className="text-white/20 hover:text-white p-2"
+                    >
+                        <Edit2 size={24} />
+                    </button>
                 </div>
-                <div className="mt-4">
+                <div className="h-0 overflow-hidden">
                     <input
-                        type="number"
+                        ref={amountInputRef}
+                        type="text"
+                        inputMode="decimal"
                         value={amount}
-                        onChange={e => setAmount(e.target.value)}
-                        className="bg-transparent border-none text-center outline-none w-full text-transparent"
+                        onChange={e => {
+                            const val = e.target.value.replace(/[^0-9.,]/g, '');
+                            setAmount(val);
+                        }}
+                        className="opacity-0"
                         autoFocus
                     />
                 </div>
@@ -429,7 +449,7 @@ export default function MinhaMerreca() {
                 {/* Descrição */}
                 <div className="px-2">
                     <input
-                        placeholder="O que você comprou?"
+                        placeholder={selectedCat === 'receita' ? "Quem pagou?" : "O que você comprou?"}
                         value={description}
                         onChange={e => setDescription(e.target.value)}
                         className="w-full bg-white/5 border border-white/10 p-5 rounded-3xl outline-none focus:border-white/20 font-bold"
