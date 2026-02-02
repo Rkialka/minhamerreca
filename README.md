@@ -1,4 +1,4 @@
-# Minha Merreca - Expense Tracker
+# Minha Merreca
 
 Este é um aplicativo de controle financeiro pessoal chamado **Minha Merreca**.
 
