@@ -662,18 +662,54 @@ function MinhaMerrecaContent() {
 
     const TransactionItem = ({ t }) => {
         const cat = categories[t.category] || categories['outros'];
-        const isPlus = t.type === 'entrada';
+        const isPlus = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === 'entrada';
         return (
-            <div className="bg-white p-4 rounded-[1.8rem] shadow-sm mb-3">
-                <div className="flex justify-between items-center">
-                    <div><p className="text-[10px] font-bold text-slate-400 uppercase">{cat.label}</p><h3 className="font-bold text-slate-800">{t.description}</h3></div>
-                    <p className={`font-bold ${isPlus ? 'text-green-600' : 'text-red-500'}`}>{isPlus ? '+' : '-'} {formatBoleto(t.amount)}</p>
-                </div>
-                <div className="flex justify-between mt-3 text-[10px] font-bold text-slate-400 uppercase">
-                    <span>{new Date(t.date + 'T12:00:00').toLocaleDateString()}</span>
-                    <div className="flex gap-2">
-                        <button onClick={() => toggleStatus(t)} className={`p-1 rounded-md ${t.status === 'pago' ? 'text-green-500 bg-green-50' : 'text-gray-300 bg-gray-50'}`}><Check size={14} /></button>
-                        <button onClick={() => handleDelete(t.id)} className="text-red-300"><Trash2 size={14} /></button>
+            <div className="bg-white p-5 rounded-[2.5rem] shadow-sm mb-4 border border-gray-50 hover:shadow-md transition-all group">
+                <div className="flex justify-between items-center gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className={`w-14 h-14 ${cat.color} rounded-[1.8rem] flex items-center justify-center text-white shadow-sm`}>
+                            <IconRenderer name={cat.icon} size={24} />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{cat.label}</p>
+                            <h3 className="font-bold text-slate-800 text-lg group-hover:text-[#8E44AD] transition-colors line-clamp-1">{t.description}</h3>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] font-bold text-slate-300 bg-slate-50 px-2 py-0.5 rounded-full">{new Date(t.date + 'T12:00:00').toLocaleDateString()}</span>
+                                {t.repeatType !== 'avista' && (
+                                    <span className="text-[10px] font-bold text-purple-400 bg-purple-50 px-2 py-0.5 rounded-full uppercase italic">
+                                        {t.repeatType === 'fixo' ? 'Fixo' : `Parcela ${t.parcelaNum}/${t.parcelasTotal}`}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="text-right flex flex-col items-end gap-2">
+                        <p className={`text-xl font-black tabular-nums ${isPlus ? 'text-green-500' : 'text-red-500'}`}>
+                            {isPlus ? '+' : '-'} {formatBoleto(t.amount)}
+                        </p>
+                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => toggleStatus(t)} className={`p-2 rounded-xl transition-all ${t.status === 'pago' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                                <Check size={16} strokeWidth={3} />
+                            </button>
+                            <button onClick={() => {
+                                setEditingId(t.id);
+                                setAmount(t.amount.toString());
+                                setDescription(t.description);
+                                setSelectedCat(t.category);
+                                setSelectedPayment(t.paymentMethod);
+                                setEntryType(t.type || 'saida');
+                                setEntryDate(t.date);
+                                setRepeatType(t.repeatType || 'avista');
+                                setInstallments(t.parcelasTotal || 1);
+                                setIgnoreInReports(t.ignoreInReports || false);
+                                setView('ENTRY');
+                            }} className="p-2 bg-blue-50 text-blue-500 rounded-xl hover:bg-blue-100">
+                                <Edit2 size={16} />
+                            </button>
+                            <button onClick={() => handleDelete(t.id)} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100">
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -732,33 +768,265 @@ function MinhaMerrecaContent() {
                     )}
 
                     {view === 'ENTRY' && (
-                        <div className="max-w-xl mx-auto bg-white p-8 rounded-[3rem] shadow-sm border border-gray-100">
-                            <div className="flex bg-gray-100 p-1.5 rounded-3xl mb-8">
-                                <button onClick={() => setEntryType('saida')} className={`flex-1 py-4 rounded-[1.5rem] font-bold transition-all ${entryType === 'saida' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-400'}`}>Despesa</button>
-                                <button onClick={() => setEntryType('entrada')} className={`flex-1 py-4 rounded-[1.5rem] font-bold transition-all ${entryType === 'entrada' ? 'bg-white text-green-500 shadow-sm' : 'text-slate-400'}`}>Receita</button>
-                            </div>
-                            <div className="space-y-6">
-                                <div><label className="text-[10px] font-black uppercase text-slate-400 px-2">Valor</label><input autoFocus value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="w-full text-5xl font-black text-slate-800 outline-none p-2" /></div>
-                                <div><label className="text-[10px] font-black uppercase text-slate-400 px-2">Descrição</label><input value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Mercado mensal" className="w-full text-lg font-bold outline-none border-b-2 border-gray-100 py-3" /></div>
-                                <button onClick={handleSave} className="w-full bg-[#8E44AD] text-white py-6 rounded-[2rem] font-black text-lg shadow-xl active:scale-95 transition-all">ANOTAR TRANSAÇÃO</button>
-                                <button onClick={() => setView('HOME')} className="w-full text-slate-300 font-bold uppercase text-[10px]">Cancelar</button>
+                        <div className="max-w-xl mx-auto">
+                            <div className="bg-white p-10 rounded-[4rem] shadow-2xl border border-gray-100">
+                                <div className="flex bg-gray-100 p-2 rounded-[2.5rem] mb-10">
+                                    <button
+                                        onClick={() => { setEntryType('saida'); setSelectedCat('outros'); }}
+                                        className={`flex-1 py-5 rounded-[2rem] font-black text-sm uppercase tracking-widest transition-all ${entryType === 'saida' ? 'bg-white text-red-500 shadow-xl scale-[1.02]' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        💔 Despesa
+                                    </button>
+                                    <button
+                                        onClick={() => { setEntryType('entrada'); setSelectedCat('dani'); }}
+                                        className={`flex-1 py-5 rounded-[2rem] font-black text-sm uppercase tracking-widest transition-all ${entryType === 'entrada' ? 'bg-white text-green-500 shadow-xl scale-[1.02]' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        💰 Receita
+                                    </button>
+                                </div>
+
+                                <div className="space-y-8">
+                                    <div className="group">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Valor da Merreca</label>
+                                        <div className="relative flex items-center">
+                                            <span className="absolute left-6 text-2xl font-black text-slate-300">R$</span>
+                                            <input
+                                                autoFocus
+                                                value={amount}
+                                                onChange={e => setAmount(e.target.value)}
+                                                placeholder="0,00"
+                                                className="w-full text-6xl font-black text-slate-800 outline-none pl-20 py-4 bg-gray-50/50 rounded-[2.5rem] border-2 border-transparent focus:border-[#8E44AD] transition-all"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-4 tracking-widest text-center">Onde foi isso?</label>
+                                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
+                                            {Object.entries(categories)
+                                                .filter(([_, c]) => c.type === entryType || c.type === 'both')
+                                                .map(([id, c]) => (
+                                                    <button
+                                                        key={id}
+                                                        onClick={() => setSelectedCat(id)}
+                                                        className={`flex flex-col items-center gap-2 p-3 rounded-3xl transition-all border-2 ${selectedCat === id ? `border-[#8E44AD] bg-[#8E44AD] text-white shadow-lg scale-110 z-10` : 'border-transparent bg-gray-50 hover:bg-gray-100 text-slate-400'}`}
+                                                    >
+                                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${selectedCat === id ? 'bg-white text-[#8E44AD]' : `${c.color} text-white`}`}>
+                                                            <IconRenderer name={c.icon} size={20} />
+                                                        </div>
+                                                        <span className="text-[9px] font-black uppercase tracking-tighter text-center leading-none">{c.label}</span>
+                                                    </button>
+                                                ))
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div>
+                                            <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Data</label>
+                                            <input
+                                                type="date"
+                                                value={entryDate}
+                                                onChange={e => setEntryDate(e.target.value)}
+                                                className="w-full p-5 bg-gray-50 rounded-[2rem] font-bold text-slate-700 outline-none border-2 border-transparent focus:border-[#8E44AD] transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Pagamento</label>
+                                            <select
+                                                value={selectedPayment}
+                                                onChange={e => setSelectedPayment(e.target.value)}
+                                                className="w-full p-5 bg-gray-50 rounded-[2rem] font-bold text-slate-700 outline-none border-2 border-transparent focus:border-[#8E44AD] transition-all appearance-none"
+                                            >
+                                                {Object.entries(PAYMENT_METHODS).map(([id, p]) => (
+                                                    <option key={id} value={id}>{p.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Descrição (Opcional)</label>
+                                        <input
+                                            value={description}
+                                            onChange={e => setDescription(e.target.value)}
+                                            placeholder="Ex: Compra do mês no Atacadão"
+                                            className="w-full p-5 bg-gray-50 rounded-[2rem] font-bold text-slate-700 outline-none border-2 border-transparent focus:border-[#8E44AD] transition-all placeholder:text-slate-300"
+                                        />
+                                    </div>
+
+                                    <div className="bg-gray-50 p-6 rounded-[2.5rem] space-y-4 border border-gray-100">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Repetição</label>
+                                            <div className="flex gap-2">
+                                                {['avista', 'fixo', 'parcelado'].map(type => (
+                                                    <button
+                                                        key={type}
+                                                        onClick={() => setRepeatType(type)}
+                                                        className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${repeatType === type ? 'bg-[#8E44AD] text-white shadow-md' : 'bg-white text-slate-400 hover:bg-gray-100'}`}
+                                                    >
+                                                        {type === 'avista' ? 'À vista' : type === 'fixo' ? 'Fixo' : 'Parcelado'}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {repeatType === 'parcelado' && (
+                                            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                                                <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest">Número de Parcelas</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="72"
+                                                    value={installments}
+                                                    onChange={e => setInstallments(parseInt(e.target.value))}
+                                                    className="w-20 p-2 bg-white rounded-xl text-center font-black text-[#8E44AD] outline-none border border-gray-200"
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                                            <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest cursor-pointer flex items-center gap-2" onClick={() => setIgnoreInReports(!ignoreInReports)}>
+                                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${ignoreInReports ? 'bg-red-500 border-red-500' : 'bg-white border-gray-300'}`}>
+                                                    {ignoreInReports && <Check size={14} className="text-white" />}
+                                                </div>
+                                                Ignorar em relatórios
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-4 space-y-4">
+                                        <button
+                                            onClick={handleSave}
+                                            className="w-full bg-[#8E44AD] text-white py-8 rounded-[2.5rem] font-black text-xl shadow-[0_20px_50px_rgba(142,68,173,0.3)] hover:translate-y-[-4px] active:translate-y-[2px] active:shadow-inner transition-all uppercase tracking-[0.2em]"
+                                        >
+                                            🚀 {editingId ? 'Atualizar Merreca' : 'Anotar Merreca'}
+                                        </button>
+                                        <button
+                                            onClick={() => { resetForm(); setView('HOME'); }}
+                                            className="w-full py-4 text-slate-300 font-bold uppercase tracking-widest text-[10px] hover:text-slate-500 transition-colors"
+                                        >
+                                            Cancelar e Voltar
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
 
                     {view === 'REPORTS' && (
-                        <div className="max-w-6xl mx-auto">
-                            <div className="bg-white p-8 rounded-[3rem] shadow-sm mb-8 border border-gray-100">
-                                <h2 className="text-2xl font-black mb-8">Relatório Anual</h2>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left">
-                                        <thead><tr className="border-b text-[10px] font-black text-slate-400 uppercase tracking-widest"><th className="pb-4">Categoria</th>{MONTHS.map(m => <th key={m} className="pb-4 text-center">{m.slice(0, 3)}</th>)}</tr></thead>
-                                        <tbody className="divide-y">
-                                            {/* (Relatório resumido para evitar sobrecarga de código) */}
-                                            <tr className="bg-green-50/50"><td className="py-4 font-bold text-green-600">Entradas</td>{yearlyData.summary.income.slice(0, 12).map((v, i) => <td key={i} className="text-center tabular-nums text-xs font-bold">{v > 0 ? v.toFixed(0) : '-'}</td>)}</tr>
-                                            <tr className="bg-red-50/50"><td className="py-4 font-bold text-red-600">Saídas</td>{yearlyData.summary.expense.slice(0, 12).map((v, i) => <td key={i} className="text-center tabular-nums text-xs font-bold">{v > 0 ? v.toFixed(0) : '-'}</td>)}</tr>
+                        <div className="max-w-7xl mx-auto">
+                            <div className="bg-white p-10 rounded-[4rem] shadow-2xl border border-gray-100">
+                                <div className="flex items-center justify-between mb-12">
+                                    <h2 className="text-4xl font-black text-slate-800 tracking-tight">Relatório <span className="text-[#8E44AD]">Anual</span></h2>
+                                    <div className="flex bg-gray-100 p-1 rounded-full">
+                                        <button onClick={() => setViewMonth(now.getMonth())} className="px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest text-slate-500 hover:text-[#8E44AD]">Ir para hoje</button>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto -mx-10 px-10">
+                                    <table className="w-full text-left min-w-[1000px] border-separate border-spacing-y-2">
+                                        <thead>
+                                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                                <th className="px-6 pb-6">Categoria</th>
+                                                {MONTHS.map(m => <th key={m} className="px-4 pb-6 text-center">{m.slice(0, 3)}</th>)}
+                                                <th className="px-6 pb-6 text-right">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {yearlyData.rows.map((row) => (
+                                                <tr key={row.id} className="group hover:bg-gray-50/50 transition-colors">
+                                                    <td className="py-4 px-6 bg-white rounded-l-[1.5rem] border-y border-l border-gray-50 flex items-center gap-3">
+                                                        <div className={`w-10 h-10 ${row.config.color} rounded-2xl flex items-center justify-center text-white shadow-sm`}>
+                                                            <IconRenderer name={row.config.icon} size={18} />
+                                                        </div>
+                                                        <span className="font-bold text-slate-700">{row.config.label}</span>
+                                                    </td>
+                                                    {row.values.slice(0, 12).map((v, i) => (
+                                                        <td key={i} className={`py-4 px-4 text-center tabular-nums text-sm border-y border-gray-50 ${i === viewMonth ? 'bg-purple-50/50 font-black text-[#8E44AD]' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                                                            {v > 0 ? v.toFixed(0) : '-'}
+                                                        </td>
+                                                    ))}
+                                                    <td className="py-4 px-6 text-right font-black text-slate-800 bg-gray-50/50 rounded-r-[1.5rem] border-y border-r border-gray-50 tabular-nums">
+                                                        {row.values[12].toFixed(0)}
+                                                    </td>
+                                                </tr>
+                                            ))}
                                         </tbody>
+                                        <tfoot>
+                                            <tr className="bg-green-50/50">
+                                                <td className="py-6 px-6 font-black text-green-600 rounded-l-[2rem] text-sm uppercase tracking-widest">💰 Entradas</td>
+                                                {yearlyData.summary.income.slice(0, 12).map((v, i) => (
+                                                    <td key={i} className={`py-6 px-4 text-center tabular-nums text-sm font-black text-green-700 ${i === viewMonth ? 'bg-green-100/50' : ''}`}>
+                                                        {v > 0 ? v.toFixed(0) : '-'}
+                                                    </td>
+                                                ))}
+                                                <td className="py-6 px-6 text-right font-black text-green-700 rounded-r-[2rem] tabular-nums">{yearlyData.summary.income[12].toFixed(0)}</td>
+                                            </tr>
+                                            <tr className="bg-red-50/50">
+                                                <td className="py-6 px-6 font-black text-red-600 rounded-l-[2rem] text-sm uppercase tracking-widest">💔 Saídas</td>
+                                                {yearlyData.summary.expense.slice(0, 12).map((v, i) => (
+                                                    <td key={i} className={`py-6 px-4 text-center tabular-nums text-sm font-black text-red-700 ${i === viewMonth ? 'bg-red-100/50' : ''}`}>
+                                                        {v > 0 ? v.toFixed(0) : '-'}
+                                                    </td>
+                                                ))}
+                                                <td className="py-6 px-6 text-right font-black text-red-700 rounded-r-[2rem] tabular-nums">{yearlyData.summary.expense[12].toFixed(0)}</td>
+                                            </tr>
+                                            <tr className="bg-slate-800 text-white">
+                                                <td className="py-8 px-6 font-black rounded-l-[2.5rem] text-sm uppercase tracking-[0.2em]">Saldo Livre</td>
+                                                {yearlyData.summary.balance.slice(0, 12).map((v, i) => (
+                                                    <td key={i} className={`py-8 px-4 text-center tabular-nums text-lg font-black ${v >= 0 ? 'text-green-400' : 'text-red-400'} ${i === viewMonth ? 'bg-white/10' : ''}`}>
+                                                        {v.toFixed(0)}
+                                                    </td>
+                                                ))}
+                                                <td className="py-8 px-6 text-right font-black text-white rounded-r-[2.5rem] text-xl tabular-nums">{yearlyData.summary.balance[12].toFixed(0)}</td>
+                                            </tr>
+                                        </tfoot>
                                     </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'CAT_MGMT' && (
+                        <div className="max-w-4xl mx-auto space-y-8">
+                            <div className="bg-white p-10 rounded-[4rem] shadow-2xl border border-gray-100">
+                                <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-8">Gerenciar <span className="text-[#8E44AD]">Categorias</span></h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {Object.entries(categories).map(([id, c]) => (
+                                        <div key={id} className="flex items-center justify-between p-6 bg-gray-50 rounded-[2.5rem] group hover:bg-white hover:shadow-xl hover:scale-[1.02] transition-all border-2 border-transparent hover:border-[#8E44AD]/10">
+                                            <div className="flex items-center gap-5">
+                                                <div className={`w-14 h-14 ${c.color} rounded-[1.8rem] flex items-center justify-center text-white shadow-lg`}>
+                                                    <IconRenderer name={c.icon} size={24} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-[#8E44AD] mb-1">{c.type === 'entrada' ? 'Receita' : 'Despesa'}</p>
+                                                    <h3 className="font-black text-slate-800 text-lg uppercase tracking-wider">{c.label}</h3>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setEditingCatId(id)} className="p-3 bg-white text-slate-400 rounded-2xl hover:text-[#8E44AD] border-2 border-transparent hover:border-[#8E44AD]/20 transition-all shadow-sm">
+                                                    <Edit2 size={18} />
+                                                </button>
+                                                {!INITIAL_CATEGORIES[id] && (
+                                                    <button onClick={async () => {
+                                                        if (confirm(`Apagar categoria "${c.label}"?`)) await deleteDoc(doc(db, "categories", id));
+                                                    }} className="p-3 bg-white text-slate-400 rounded-2xl hover:text-red-500 border-2 border-transparent hover:border-red-500/20 transition-all shadow-sm">
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button
+                                        onClick={() => setEditingCatId('NEW')}
+                                        className="flex items-center justify-center p-8 bg-gray-100 rounded-[2.5rem] border-4 border-dashed border-gray-200 text-slate-400 hover:border-[#8E44AD]/30 hover:text-[#8E44AD] hover:bg-white group transition-all"
+                                    >
+                                        <div className="flex flex-col items-center gap-2">
+                                            <Plus size={32} className="group-hover:scale-125 transition-transform" />
+                                            <span className="font-black uppercase tracking-widest text-xs">Nova Categoria</span>
+                                        </div>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -790,6 +1058,76 @@ function MinhaMerrecaContent() {
                 )}
 
                 {renderMerrecaChat()}
+
+                {editingCatId && (
+                    <div className="fixed inset-0 bg-[#2C3E50]/80 backdrop-blur-xl z-[600] flex items-center justify-center p-6" onClick={() => setEditingCatId(null)}>
+                        <div className="bg-white w-full max-w-lg rounded-[4rem] p-12 text-center animate-in zoom-in duration-300 shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <h2 className="text-4xl font-black mb-10 text-slate-800 tracking-tight">Categoria</h2>
+                            <div className="space-y-8 text-left">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Nome</label>
+                                    <input
+                                        defaultValue={editingCatId === 'NEW' ? '' : categories[editingCatId]?.label}
+                                        placeholder="Ex: Assinaturas"
+                                        id="cat-name"
+                                        className="w-full p-6 bg-gray-50 rounded-[2.5rem] font-bold text-slate-800 outline-none border-2 border-transparent focus:border-[#8E44AD] transition-all"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Tipo</label>
+                                        <select
+                                            id="cat-type"
+                                            defaultValue={editingCatId === 'NEW' ? 'saida' : categories[editingCatId]?.type}
+                                            className="w-full p-6 bg-gray-50 rounded-[2.5rem] font-bold text-slate-800 outline-none appearance-none"
+                                        >
+                                            <option value="saida">💔 Despesa</option>
+                                            <option value="entrada">💰 Receita</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 px-6 block mb-2 tracking-widest">Ícone</label>
+                                        <select
+                                            id="cat-icon"
+                                            defaultValue={editingCatId === 'NEW' ? 'ShoppingCart' : categories[editingCatId]?.icon}
+                                            className="w-full p-6 bg-gray-50 rounded-[2.5rem] font-bold text-slate-800 outline-none appearance-none"
+                                        >
+                                            <option value="ShoppingCart">🛒 Mercado</option>
+                                            <option value="Home">🏠 Casa</option>
+                                            <option value="Heart">❤️ Saúde/Dani</option>
+                                            <option value="Car">🚗 Transporte</option>
+                                            <option value="Coffee">☕ Alimentação</option>
+                                            <option value="ShoppingBag">🛍️ Compras</option>
+                                            <option value="PartyPopper">🎉 Lazer</option>
+                                            <option value="DollarSign">💵 Receita</option>
+                                            <option value="MoreHorizontal">➕ Outros</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const name = document.getElementById('cat-name').value;
+                                        const type = document.getElementById('cat-type').value;
+                                        const icon = document.getElementById('cat-icon').value;
+                                        if (!name) return;
+                                        const catData = { label: name, type, icon, color: type === 'entrada' ? 'bg-[#2ECC71]' : 'bg-[#E67E22]' };
+                                        if (editingCatId === 'NEW') {
+                                            const id = name.toLowerCase().replace(/\s+/g, '-');
+                                            await setDoc(doc(db, "categories", id), catData);
+                                        } else {
+                                            await updateDoc(doc(db, "categories", editingCatId), catData);
+                                        }
+                                        setEditingCatId(null);
+                                        showToast("Categoria salva!");
+                                    }}
+                                    className="w-full bg-[#8E44AD] text-white py-8 rounded-[2.5rem] font-black text-xl shadow-xl hover:translate-y-[-4px] active:translate-y-[2px] transition-all uppercase tracking-widest"
+                                >
+                                    Salvar Alterações
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );
