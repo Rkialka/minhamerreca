@@ -135,6 +135,7 @@ function MinhaMerrecaContent() {
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
     const [editingCell, setEditingCell] = useState(null); // { id: '...', field: '...' }
     const [editingCatId, setEditingCatId] = useState(null);
+    const [showMobileFilter, setShowMobileFilter] = useState(false);
     const [merrecaOpen, setMerrecaOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState([
         { role: 'assistant', content: 'Olá! Sou a Merreca, sua assistente financeira. Como posso ajudar você hoje?' }
@@ -338,6 +339,28 @@ function MinhaMerrecaContent() {
 
     // Refs
     const amountInputRef = React.useRef(null);
+
+    // Edit Effect
+    useEffect(() => {
+        if (editingId) {
+            const t = transactions.find(t => t.id === editingId);
+            if (t) {
+                setEntryType(t.type || 'saida');
+                setAmount(t.amount.toString());
+                const cat = Object.keys(categories).find(k => k === t.category) || 'outros';
+                setSelectedCat(cat);
+                setEntryDate(t.date);
+                setDescription(t.description);
+                setSelectedPayment(t.payment || 'pix');
+                setRepeatType(t.repeatType || 'avista');
+                setInstallments(t.installments || 1);
+                setIgnoreInReports(t.ignoreInReports || false);
+                setStatus(t.status || 'pago');
+                setObservations(t.observations || '');
+                setView('ENTRY');
+            }
+        }
+    }, [editingId, transactions]);
 
     // --- FIREBASE SYNC ---
     useEffect(() => {
@@ -1259,39 +1282,40 @@ function MinhaMerrecaContent() {
         const cat = categories[t.category] || categories['outros'];
         const isPlus = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === 'entrada';
         const dateObj = new Date(t.date + 'T12:00:00');
+        const hex = (cat.color && cat.color.match(/\[(.*?)\]/)?.[1]) || '#8E44AD';
 
         return (
-            <div className="bg-white p-5 rounded-[2rem] shadow-sm mb-4 border border-gray-100 flex flex-col gap-3 relative group transition-all">
+            <div className="bg-white p-5 rounded-[2rem] shadow-sm mb-4 border border-gray-100 flex flex-col gap-3 relative group transition-all hover:shadow-md">
                 {/* Row 1: Date and Actions */}
                 <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-1.5 leading-none">
+                    <div className="flex items-baseline gap-1.5 leading-none">
                         <span className="text-2xl font-black text-slate-800">{dateObj.getDate()}</span>
-                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest pt-1">{dateObj.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</span>
+                        <span className="text-xs font-bold text-slate-300 uppercase">{dateObj.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</span>
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={() => setEditingId(t.id)} className="text-slate-300 hover:text-[#8E44AD] transition-colors"><Edit2 size={16} /></button>
-                        <button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                        <button onClick={() => setEditingId(t.id)} className="text-slate-300 hover:text-[#8E44AD] transition-colors"><Edit2 size={18} /></button>
+                        <button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                     </div>
                 </div>
 
                 {/* Row 2: Desc and Amount */}
                 <div className="flex justify-between items-start gap-4">
-                    <h3 className="font-extrabold text-slate-700 text-sm leading-tight line-clamp-2">{t.description}</h3>
+                    <h3 className="font-extrabold text-slate-700 text-sm leading-tight line-clamp-2 mt-1">{t.description}</h3>
                     <div className="text-right shrink-0">
                         <p className={`text-xl font-black whitespace-nowrap ${isPlus ? 'text-green-500' : 'text-red-500'}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        {t.repeatType === 'parcelado' && (
+                            <p className="text-[10px] font-black text-red-400 uppercase tracking-wider mt-0.5 text-right">
+                                {t.currentInstallment}/{t.installments} • CRÉDITO
+                            </p>
+                        )}
                     </div>
                 </div>
 
-                {/* Row 3: Category and Installment */}
-                <div className="flex justify-between items-center mt-1">
-                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider w-max border border-transparent ${cat.color ? cat.color.replace('bg-', 'bg-').replace(']', ']/10 text-') + ' text-' + cat.color.replace('bg-', '') : 'bg-gray-100 text-slate-400'}`}>
+                {/* Row 3: Category */}
+                <div className="flex justify-between items-center mt-2">
+                    <span style={{ backgroundColor: hex + '20', color: hex }} className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider">
                         {cat.label}
                     </span>
-                    {t.repeatType === 'parcelado' && (
-                        <p className="text-[9px] font-black text-red-500 uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded ml-auto">
-                            {t.currentInstallment}/{t.installments} • CRÉDITO
-                        </p>
-                    )}
                 </div>
             </div>
         );
@@ -1467,10 +1491,10 @@ function MinhaMerrecaContent() {
                             {!isMobile && <FilterBar categories={categories} activeFilters={activeFilters} setActiveFilters={setActiveFilters} />}
 
                             {isMobile ? (
-                                <div className="space-y-4 px-2 pb-20">
+                                <div className="space-y-4 px-2 pb-40">
                                     {/* Mobile Header */}
                                     <div className="flex items-center justify-between mb-8 mt-2">
-                                        <button className="p-3 bg-white rounded-2xl shadow-sm text-slate-300"><Filter size={20} /></button>
+                                        <button onClick={() => setShowMobileFilter(!showMobileFilter)} className={`p-3 rounded-full shadow-sm transition-all ${showMobileFilter ? 'bg-[#8E44AD] text-white' : 'bg-white text-[#8E44AD]'}`}><Filter size={20} /></button>
                                         <div className="flex items-center gap-4">
                                             <button onClick={() => changeMonth(-1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400"><ChevronLeft size={20} /></button>
                                             <div className="text-center">
@@ -1481,6 +1505,12 @@ function MinhaMerrecaContent() {
                                         </div>
                                         <button onClick={() => changeMonth(1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 invisible"><ChevronRight size={20} /></button>
                                     </div>
+
+                                    {showMobileFilter && (
+                                        <div className="mb-6 animate-in slide-in-from-top-2">
+                                            <FilterBar categories={categories} activeFilters={activeFilters} setActiveFilters={setActiveFilters} />
+                                        </div>
+                                    )}
 
                                     {filteredTransactions.map(t => <TransactionItem key={t.id} t={t} categories={categories} totals={totals} />)}
                                 </div>
