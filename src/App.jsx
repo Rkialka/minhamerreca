@@ -3,8 +3,9 @@ import {
     Plus, Lock, ArrowUp, ArrowDown, Check, X, Home,
     DollarSign, Receipt, ShoppingCart, Car, Heart, PartyPopper, ShoppingBag,
     BarChart2, Calendar, CreditCard, Wallet, MoreHorizontal, Edit2, Trash2, Copy,
-    ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, EyeOff, Menu, SendHorizontal, Paperclip, FileText, Image, Mic, Target, Download, Moon, Sun, ArrowUpCircle, ArrowDownCircle
+    ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, EyeOff, Menu, SendHorizontal, Paperclip, FileText, Image, Mic, Target, Download, Moon, Sun, ArrowUpCircle, ArrowDownCircle, MoreVertical, Phone, Video
 } from 'lucide-react';
+import { MerrecaChatMobile } from './components/MerrecaChatMobile';
 import * as Tesseract from 'tesseract.js';
 import * as XLSX from 'xlsx';
 import * as pdfjs from 'pdfjs-dist';
@@ -935,6 +936,18 @@ function MinhaMerrecaContent() {
 
     const renderMerrecaChat = () => {
         if (!merrecaOpen) return null;
+
+        if (isMobile) {
+            return (
+                <MerrecaChatMobile
+                    onClose={() => setMerrecaOpen(false)}
+                    messages={chatMessages}
+                    onSendMessage={askMerreca}
+                    isLoading={isTyping} // Assuming isTyping isn't available in scope or needs to be passed. isTyping IS available in scope?
+                />
+            );
+        }
+
         return (
             <div className="fixed inset-0 bg-[#2C3E50]/80 backdrop-blur-md z-[300] flex items-center justify-center p-4" onClick={() => setMerrecaOpen(false)}>
                 <div className="bg-white w-full max-w-2xl h-[80vh] rounded-[3rem] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
@@ -1625,7 +1638,7 @@ function MinhaMerrecaContent() {
                         <div className="hidden"></div>
                     ))}
                     {view === 'REPORTS' && (
-                        <div className="max-w-5xl mx-auto space-y-10 pt-10 px-6 pb-20" id="report-container">
+                        <div className="max-w-5xl mx-auto space-y-10 pt-10 px-6 pb-40" id="report-container">
                             <div className="text-center group">
                                 <h2 className="text-4xl font-black text-slate-800 tracking-tight uppercase mb-2">Minha Merreca ✨</h2>
                             </div>
