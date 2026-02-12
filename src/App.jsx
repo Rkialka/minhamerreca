@@ -3,7 +3,7 @@ import {
     Plus, Lock, ArrowUp, ArrowDown, Check, X, Home,
     DollarSign, Receipt, ShoppingCart, Car, Heart, PartyPopper, ShoppingBag,
     BarChart2, Calendar, CreditCard, Wallet, MoreHorizontal, Edit2, Trash2, Copy,
-    ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, EyeOff, Menu, SendHorizontal, Paperclip, FileText, Image, Mic, Target, Download, Moon, Sun
+    ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, EyeOff, Menu, SendHorizontal, Paperclip, FileText, Image, Mic, Target, Download, Moon, Sun, ArrowUpCircle, ArrowDownCircle
 } from 'lucide-react';
 import * as Tesseract from 'tesseract.js';
 import * as XLSX from 'xlsx';
@@ -1258,16 +1258,41 @@ function MinhaMerrecaContent() {
     const TransactionItem = ({ t, categories, totals }) => {
         const cat = categories[t.category] || categories['outros'];
         const isPlus = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === 'entrada';
-        const totalBase = isPlus ? totals.income : totals.expense;
-        const percent = totalBase > 0 ? Math.round((t.amount / totalBase) * 100) : 0;
+        const dateObj = new Date(t.date + 'T12:00:00');
+
         return (
-            <div className="bg-white p-4 rounded-[2rem] shadow-sm mb-3 border border-gray-100 flex items-center justify-between">
-                <div className="flex items-center">
-                    <span className="px-4 py-1.5 rounded-lg bg-purple-50 text-[10px] font-black text-[#8E44AD]/60 uppercase tracking-[0.15em] border border-purple-100/50">
+            <div className="bg-white p-5 rounded-[2rem] shadow-sm mb-4 border border-gray-100 flex flex-col gap-3 relative group transition-all">
+                {/* Row 1: Date and Actions */}
+                <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-1.5 leading-none">
+                        <span className="text-2xl font-black text-slate-800">{dateObj.getDate()}</span>
+                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest pt-1">{dateObj.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</span>
+                    </div>
+                    <div className="flex gap-3">
+                        <button onClick={() => setEditingId(t.id)} className="text-slate-300 hover:text-[#8E44AD] transition-colors"><Edit2 size={16} /></button>
+                        <button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                    </div>
+                </div>
+
+                {/* Row 2: Desc and Amount */}
+                <div className="flex justify-between items-start gap-4">
+                    <h3 className="font-extrabold text-slate-700 text-sm leading-tight line-clamp-2">{t.description}</h3>
+                    <div className="text-right shrink-0">
+                        <p className={`text-xl font-black whitespace-nowrap ${isPlus ? 'text-green-500' : 'text-red-500'}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                </div>
+
+                {/* Row 3: Category and Installment */}
+                <div className="flex justify-between items-center mt-1">
+                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider w-max border border-transparent ${cat.color ? cat.color.replace('bg-', 'bg-').replace(']', ']/10 text-') + ' text-' + cat.color.replace('bg-', '') : 'bg-gray-100 text-slate-400'}`}>
                         {cat.label}
                     </span>
+                    {t.repeatType === 'parcelado' && (
+                        <p className="text-[9px] font-black text-red-500 uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded ml-auto">
+                            {t.currentInstallment}/{t.installments} • CRÉDITO
+                        </p>
+                    )}
                 </div>
-                <p className="font-bold text-slate-800 text-base">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
         );
     };
@@ -1442,7 +1467,21 @@ function MinhaMerrecaContent() {
                             {!isMobile && <FilterBar categories={categories} activeFilters={activeFilters} setActiveFilters={setActiveFilters} />}
 
                             {isMobile ? (
-                                <div className="space-y-4">
+                                <div className="space-y-4 px-2 pb-20">
+                                    {/* Mobile Header */}
+                                    <div className="flex items-center justify-between mb-8 mt-2">
+                                        <button className="p-3 bg-white rounded-2xl shadow-sm text-slate-300"><Filter size={20} /></button>
+                                        <div className="flex items-center gap-4">
+                                            <button onClick={() => changeMonth(-1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400"><ChevronLeft size={20} /></button>
+                                            <div className="text-center">
+                                                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">{MONTHS[viewMonth]}</h2>
+                                                <p className="text-[10px] font-black text-slate-300 tracking-[0.3em] font-outfit">2026</p>
+                                            </div>
+                                            <button onClick={() => changeMonth(1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400"><ChevronRight size={20} /></button>
+                                        </div>
+                                        <button onClick={() => changeMonth(1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 invisible"><ChevronRight size={20} /></button>
+                                    </div>
+
                                     {filteredTransactions.map(t => <TransactionItem key={t.id} t={t} categories={categories} totals={totals} />)}
                                 </div>
                             ) : (
@@ -1570,20 +1609,47 @@ function MinhaMerrecaContent() {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="bg-white p-8 rounded-[3.5rem] shadow-sm border border-gray-100 flex flex-col justify-center">
-                                    <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-2">Entradas</p>
-                                    <p className="text-4xl font-black text-green-700 tabular-nums">R$ {(totals?.income || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            {isMobile ? (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                                        <div className="p-2 bg-green-50 text-green-500 rounded-full mb-1"><ArrowUpCircle size={24} /></div>
+                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">Ganhos</p>
+                                        <p className="text-lg font-black text-slate-800 tabular-nums">R$ {(totals?.income || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                                        <div className="p-2 bg-red-50 text-red-500 rounded-full mb-1"><ArrowDownCircle size={24} /></div>
+                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">Gastos</p>
+                                        <p className="text-lg font-black text-slate-800 tabular-nums">R$ {(totals?.expense || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                                        <div className="p-2 bg-purple-50 text-[#8E44AD] rounded-full mb-1"><Wallet size={24} /></div>
+                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">Sobrou</p>
+                                        <p className="text-lg font-black text-slate-800 tabular-nums">R$ {(totals?.balance || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                                        <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center font-black text-[10px] text-slate-400">
+                                            {totals.income > 0 ? Math.round((totals.expense / totals.income) * 100) : 0}%
+                                        </div>
+                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">% Usado</p>
+                                        <p className="text-lg font-black text-slate-800 tabular-nums">{totals.income > 0 ? Math.round((totals.expense / totals.income) * 100) : 0}%</p>
+                                    </div>
                                 </div>
-                                <div className="bg-white p-8 rounded-[3.5rem] shadow-sm border border-gray-100 flex flex-col justify-center">
-                                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-2">Gastos</p>
-                                    <p className="text-4xl font-black text-red-700 tabular-nums">R$ {(totals?.expense || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="bg-white p-8 rounded-[3.5rem] shadow-sm border border-gray-100 flex flex-col justify-center">
+                                        <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-2">Entradas</p>
+                                        <p className="text-4xl font-black text-green-700 tabular-nums">R$ {(totals?.income || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <div className="bg-white p-8 rounded-[3.5rem] shadow-sm border border-gray-100 flex flex-col justify-center">
+                                        <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-2">Gastos</p>
+                                        <p className="text-4xl font-black text-red-700 tabular-nums">R$ {(totals?.expense || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <div className="bg-[#8E44AD] p-8 rounded-[3.5rem] shadow-lg shadow-purple-200 flex flex-col justify-center text-white">
+                                        <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-2">Saldo Livre</p>
+                                        <p className="text-4xl font-black tabular-nums">R$ {(totals?.balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    </div>
                                 </div>
-                                <div className="bg-[#8E44AD] p-8 rounded-[3.5rem] shadow-lg shadow-purple-200 flex flex-col justify-center text-white">
-                                    <p className="text-[10px] font-black opacity-60 uppercase tracking-widest mb-2">Saldo Livre</p>
-                                    <p className="text-4xl font-black tabular-nums">R$ {(totals?.balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                </div>
-                            </div>
+                            )}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <div className="bg-white p-10 rounded-[4rem] shadow-sm border border-gray-100">
@@ -1790,98 +1856,99 @@ function MinhaMerrecaContent() {
                     )}
 
                     {view === 'GOALS' && (
-                        <div className="max-w-6xl mx-auto space-y-8 pt-6 pb-20 px-6">
+                        <div className="max-w-6xl mx-auto space-y-6 pt-6 pb-20 px-4 md:px-6">
+                            {Object.entries(categories)
+                                .filter(([_, c]) => c.type === 'saida')
+                                .map(([id, category]) => {
+                                    const existingGoal = goals.find(g => g.category === id);
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {Object.entries(categories)
-                                    .filter(([_, c]) => c.type === 'saida')
-                                    .map(([id, category]) => {
-                                        const existingGoal = goals.find(g => g.category === id);
+                                    // Calculate 3-month average if no goal exists
+                                    const average = existingGoal ? existingGoal.target : (() => {
+                                        const today = new Date();
+                                        const threeMonthsAgo = new Date();
+                                        threeMonthsAgo.setMonth(today.getMonth() - 3);
 
-                                        // Calculate 3-month average if no goal exists
-                                        const average = existingGoal ? existingGoal.target : (() => {
-                                            const today = new Date();
-                                            const threeMonthsAgo = new Date();
-                                            threeMonthsAgo.setMonth(today.getMonth() - 3);
+                                        const relevantTransactions = transactions.filter(t =>
+                                            t.category === id &&
+                                            t.type === 'saida' &&
+                                            new Date(t.date + 'T12:00:00') >= threeMonthsAgo &&
+                                            new Date(t.date + 'T12:00:00') <= today
+                                        );
 
-                                            const relevantTransactions = transactions.filter(t =>
-                                                t.category === id &&
-                                                t.type === 'saida' &&
-                                                new Date(t.date + 'T12:00:00') >= threeMonthsAgo &&
-                                                new Date(t.date + 'T12:00:00') <= today
-                                            );
+                                        // Simply sum / 3 for monthly average estimate
+                                        const total = relevantTransactions.reduce((acc, t) => acc + t.amount, 0);
+                                        return total > 0 ? Math.ceil(total / 3) : 1000; // Default to 1000 if no data
+                                    })();
 
-                                            // Simply sum / 3 for monthly average estimate
-                                            const total = relevantTransactions.reduce((acc, t) => acc + t.amount, 0);
-                                            return total > 0 ? Math.ceil(total / 3) : 1000; // Default to 1000 if no data
-                                        })();
+                                    const targetValue = existingGoal ? existingGoal.target : average;
 
-                                        const targetValue = existingGoal ? existingGoal.target : average;
+                                    const monthSpend = transactions
+                                        .filter(t => t.category === id && new Date(t.date + 'T12:00:00').getMonth() === viewMonth)
+                                        .reduce((acc, t) => acc + t.amount, 0);
 
-                                        const monthSpend = transactions
-                                            .filter(t => t.category === id && new Date(t.date + 'T12:00:00').getMonth() === viewMonth)
-                                            .reduce((acc, t) => acc + t.amount, 0);
+                                    const progress = Math.min(100, Math.max(0, (monthSpend / targetValue) * 100));
+                                    const isExceeded = monthSpend > targetValue;
 
-                                        const progress = Math.min(100, Math.max(0, (monthSpend / targetValue) * 100));
-                                        const isExceeded = monthSpend > targetValue;
-
-                                        return (
-                                            <div key={id} className="bg-white p-8 rounded-[3rem] shadow-sm border border-gray-100 group relative overflow-hidden">
-                                                <div className={`absolute top-0 left-0 w-2 h-full ${category.color || 'bg-[#8E44AD]'}`}></div>
-                                                <div className="flex justify-between items-center mb-6">
+                                    return (
+                                        <div key={id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 group relative">
+                                            <div className="flex items-center justify-between mb-5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-1.5 h-6 rounded-full ${category.color || 'bg-[#8E44AD]'}`}></div>
                                                     <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">{category.label}</h3>
                                                 </div>
+                                                <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider ${isExceeded ? 'bg-red-50 text-red-500' : 'bg-purple-50 text-[#8E44AD]'}`}>
+                                                    {isExceeded ? 'META EXCEDIDA' : `${Math.round(progress)}% DA META`}
+                                                </span>
+                                            </div>
 
-                                                <div className="space-y-4">
-                                                    <div className="flex justify-between items-end">
-                                                        <div>
-                                                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1">Gasto</p>
-                                                            <p className={`text-3xl font-black tabular-nums ${isExceeded ? 'text-red-500' : 'text-slate-700'}`}>
-                                                                R$ {monthSpend.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                            </p>
+                                            <div className="relative h-3 bg-gray-50 rounded-full border border-gray-100 overflow-hidden mb-6">
+                                                <div
+                                                    className={`h-full transition-all duration-1000 ease-out ${isExceeded ? 'bg-red-500' : (category.color || 'bg-[#8E44AD]')}`}
+                                                    style={{ width: `${progress}%` }}
+                                                ></div>
+                                            </div>
+
+                                            <div className="flex justify-between items-end">
+                                                <div>
+                                                    <p className="text-[11px] font-bold text-slate-500 mb-0.5">Gasto: <span className="text-slate-800 font-black">R$ {monthSpend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></p>
+                                                    {isExceeded && <p className="text-[10px] font-bold text-red-500">Excedeu em R$ {(monthSpend - targetValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>}
+                                                </div>
+                                                <div className="text-right flex flex-col items-end">
+                                                    <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1">Meta</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm font-bold text-slate-400">R$</span>
+                                                        <input
+                                                            type="number"
+                                                            defaultValue={targetValue}
+                                                            onBlur={async (e) => {
+                                                                const val = parseFloat(e.target.value);
+                                                                if (!val) return;
+
+                                                                // Save or Update Goal
+                                                                if (existingGoal) {
+                                                                    if (existingGoal.target !== val) {
+                                                                        await updateDoc(doc(db, "goals", existingGoal.id), { target: val });
+                                                                    }
+                                                                } else {
+                                                                    await addDoc(collection(db, "goals"), {
+                                                                        category: id,
+                                                                        title: category.label,
+                                                                        target: val,
+                                                                        createdAt: new Date().toISOString()
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="w-20 font-black text-slate-800 text-xl outline-none border-b border-transparent focus:border-[#8E44AD] transition-all bg-transparent p-0 text-right tabular-nums"
+                                                        />
+                                                        <div className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-slate-300 pointer-events-none bg-gray-50">
+                                                            <Edit2 size={12} />
                                                         </div>
-                                                        <div className="text-right">
-                                                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-[0.2em] mb-1">Meta</p>
-                                                            <div className="flex items-center justify-end">
-                                                                <span className="text-sm font-bold text-slate-400 mr-1">R$</span>
-                                                                <input
-                                                                    type="number"
-                                                                    defaultValue={targetValue}
-                                                                    onBlur={async (e) => {
-                                                                        const val = parseFloat(e.target.value);
-                                                                        if (!val) return;
-
-                                                                        // Save or Update Goal
-                                                                        if (existingGoal) {
-                                                                            if (existingGoal.target !== val) {
-                                                                                await updateDoc(doc(db, "goals", existingGoal.id), { target: val });
-                                                                            }
-                                                                        } else {
-                                                                            await addDoc(collection(db, "goals"), {
-                                                                                category: id,
-                                                                                title: category.label,
-                                                                                target: val,
-                                                                                createdAt: new Date().toISOString()
-                                                                            });
-                                                                        }
-                                                                    }}
-                                                                    className="w-24 text-right font-black text-slate-500 text-lg bg-gray-50 rounded-lg px-2 py-1 outline-none focus:bg-white focus:ring-2 focus:ring-[#8E44AD]/20 transition-all border border-transparent focus:border-[#8E44AD]"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="relative h-4 bg-gray-50 rounded-full border border-gray-100 overflow-hidden">
-                                                        <div
-                                                            className={`h-full transition-all duration-1000 ease-out ${isExceeded ? 'bg-red-500' : (category.color || 'bg-[#8E44AD]')}`}
-                                                            style={{ width: `${progress}%` }}
-                                                        ></div>
                                                     </div>
                                                 </div>
                                             </div>
-                                        );
-                                    })}
-                            </div>
+                                        </div>
+                                    );
+                                })}
                         </div>
                     )}
                 </div>
