@@ -3,11 +3,11 @@ import {
     Plus, Lock, ArrowUp, ArrowDown, Check, X, Home,
     DollarSign, Receipt, ShoppingCart, Car, Heart, PartyPopper, ShoppingBag,
     BarChart2, Calendar, CreditCard, Wallet, MoreHorizontal, Edit2, Trash2,
-    ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles
+    ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, LogOut
 } from 'lucide-react';
 import { db } from './firebaseConfig';
 import {
-    collection, addDoc, onSnapshot, query,
+    collection, addDoc, onSnapshot, query, where,
     deleteDoc, doc, updateDoc, writeBatch, serverTimestamp
 } from 'firebase/firestore';
 
@@ -55,7 +55,7 @@ const MONTHS = [
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-export default function MinhaMerreca() {
+export default function MinhaMerreca({ user, onSignOut }) {
     const [view, setView] = useState('HOME'); // HOME, ENTRY, REPORTS, CAT_MGMT
     const [transactions, setTransactions] = useState([]);
     const [categories, setCategories] = useState(INITIAL_CATEGORIES);
@@ -74,11 +74,9 @@ export default function MinhaMerreca() {
 
     // Sync Categorias do Firebase
     useEffect(() => {
-        const q = query(collection(db, "categories"));
+        const q = query(collection(db, "categories"), where("userId", "==", user.uid));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             if (snapshot.empty) {
-                // Se estiver vazio, não fazemos nada ou poderíamos inicializar, 
-                // mas vamos manter as INITIAL_CATEGORIES como fallback.
                 return;
             }
             const data = {};
@@ -88,7 +86,7 @@ export default function MinhaMerreca() {
             setCategories(prev => ({ ...prev, ...data }));
         });
         return () => unsubscribe();
-    }, []);
+    }, [user.uid]);
 
     // Navegação de Período
     const now = new Date();
@@ -123,14 +121,14 @@ export default function MinhaMerreca() {
     // --- FIREBASE SYNC ---
     useEffect(() => {
         setLoading(true);
-        const q = query(collection(db, "transactions"));
+        const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             setTransactions(data);
             setLoading(false);
         });
         return () => unsubscribe();
-    }, []);
+    }, [user.uid]);
 
     // --- COMPUTED DATA ---
     const filteredTransactions = useMemo(() => {
@@ -243,6 +241,7 @@ export default function MinhaMerreca() {
             paymentMethod: selectedPayment,
             type: entryType,
             repeatType: repeatType,
+            userId: user.uid,
             updatedAt: serverTimestamp()
         };
 
@@ -434,9 +433,10 @@ export default function MinhaMerreca() {
         const id = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
         await addDoc(collection(db, "categories"), {
             label: name,
-            icon: 'MoreHorizontal', // Simplificado para esse exemplo
+            icon: 'MoreHorizontal',
             color: 'bg-[#7F8C8D]',
-            type: 'despesa'
+            type: 'despesa',
+            userId: user.uid
         });
     };
 
@@ -481,6 +481,7 @@ export default function MinhaMerreca() {
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-center p-4 z-40 rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+                <button onClick={onSignOut} className="p-3 transition-colors text-gray-300 hover:text-red-400"><LogOut size={24} /></button>
                 <button onClick={() => setView('CAT_MGMT')} className={`p-3 transition-colors ${view === 'CAT_MGMT' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Settings size={24} /></button>
                 <button onClick={() => setView('REPORTS')} className={`p-3 transition-colors ${view === 'REPORTS' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><BarChart2 size={24} /></button>
                 <button onClick={() => setView('HOME')} className={`p-3 transition-colors ${view === 'HOME' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Home size={24} /></button>
@@ -604,8 +605,9 @@ export default function MinhaMerreca() {
         <div className="h-screen bg-[#FDFDFD] text-[#2C3E50] flex font-sans overflow-hidden">
             {/* Sidebar Fixa */}
             <aside className="w-96 bg-white p-8 flex flex-col h-screen overflow-y-auto border-r border-gray-100 z-50">
-                <div className="mb-8 flex items-center justify-center border-b border-gray-50 pb-8">
+                <div className="mb-8 flex items-center justify-between border-b border-gray-50 pb-8">
                     <img src="./logo.png" alt="Minha Merreca" className="h-20 object-contain w-auto" />
+                    <button onClick={onSignOut} className="p-3 text-gray-300 hover:text-red-400 transition-colors rounded-xl hover:bg-red-50" title="Sair"><LogOut size={20} /></button>
                 </div>
 
                 <div className="space-y-6 mb-10">
@@ -1068,6 +1070,7 @@ export default function MinhaMerreca() {
 
             {/* Bottom Nav */}
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex items-center justify-between px-10 py-5 z-40 rounded-t-[2.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.02)]">
+                <button onClick={onSignOut} className="p-2 transition-all text-gray-300 hover:text-red-400"><LogOut size={26} strokeWidth={2.5} /></button>
                 <button onClick={() => setView('HOME')} className={`p-2 transition-all ${view === 'HOME' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Home size={26} strokeWidth={2.5} /></button>
                 <button onClick={() => setView('REPORTS')} className={`p-2 transition-all ${view === 'REPORTS' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><BarChart2 size={26} strokeWidth={2.5} /></button>
                 <button onClick={() => setView('CAT_MGMT')} className={`p-2 transition-all ${view === 'CAT_MGMT' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Settings size={26} strokeWidth={2.5} /></button>
@@ -1168,6 +1171,7 @@ export default function MinhaMerreca() {
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-center p-4 z-40 rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+                <button onClick={onSignOut} className="p-3 transition-colors text-gray-300 hover:text-red-400"><LogOut size={24} /></button>
                 <button onClick={() => setView('CAT_MGMT')} className={`p-3 transition-colors ${view === 'CAT_MGMT' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Settings size={24} /></button>
                 <button onClick={() => setView('REPORTS')} className={`p-3 transition-colors ${view === 'REPORTS' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><BarChart2 size={24} /></button>
                 <button onClick={() => setView('HOME')} className={`p-3 transition-colors ${view === 'HOME' ? 'text-[#2ECC71]' : 'text-gray-300'}`}><Home size={24} /></button>
