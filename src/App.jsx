@@ -75,16 +75,19 @@ export default function MinhaMerreca({ user, onSignOut }) {
     // Sync Categorias do Firebase
     useEffect(() => {
         const q = query(collection(db, "categories"), where("userId", "==", user.uid));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            if (snapshot.empty) {
-                return;
+        const unsubscribe = onSnapshot(q,
+            (snapshot) => {
+                if (snapshot.empty) return;
+                const data = {};
+                snapshot.docs.forEach(d => {
+                    data[d.id] = d.data();
+                });
+                setCategories(prev => ({ ...prev, ...data }));
+            },
+            (err) => {
+                console.error("Erro ao carregar categorias:", err);
             }
-            const data = {};
-            snapshot.docs.forEach(d => {
-                data[d.id] = d.data();
-            });
-            setCategories(prev => ({ ...prev, ...data }));
-        });
+        );
         return () => unsubscribe();
     }, [user.uid]);
 
@@ -122,11 +125,17 @@ export default function MinhaMerreca({ user, onSignOut }) {
     useEffect(() => {
         setLoading(true);
         const q = query(collection(db, "transactions"), where("userId", "==", user.uid));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setTransactions(data);
-            setLoading(false);
-        });
+        const unsubscribe = onSnapshot(q,
+            (snapshot) => {
+                const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                setTransactions(data);
+                setLoading(false);
+            },
+            (err) => {
+                console.error("Erro ao carregar transações:", err);
+                setLoading(false);
+            }
+        );
         return () => unsubscribe();
     }, [user.uid]);
 
@@ -293,13 +302,21 @@ export default function MinhaMerreca({ user, onSignOut }) {
 
     const handleDelete = async (id) => {
         if (confirm("Quer mesmo apagar essa merreca?")) {
-            await deleteDoc(doc(db, "transactions", id));
+            try {
+                await deleteDoc(doc(db, "transactions", id));
+            } catch (e) {
+                alert("Erro ao apagar: " + e.message);
+            }
         }
     };
 
     const toggleStatus = async (t) => {
-        const newStatus = t.status === 'pago' ? 'não pago' : 'pago';
-        await updateDoc(doc(db, "transactions", t.id), { status: newStatus });
+        try {
+            const newStatus = t.status === 'pago' ? 'não pago' : 'pago';
+            await updateDoc(doc(db, "transactions", t.id), { status: newStatus });
+        } catch (e) {
+            alert("Erro ao atualizar status: " + e.message);
+        }
     };
 
     const showToast = (msg) => {
@@ -423,21 +440,28 @@ export default function MinhaMerreca({ user, onSignOut }) {
             return;
         }
         if (confirm("Deseja apagar esta categoria? Lançamentos nela serão mantidos, mas podem ficar sem ícone.")) {
-            await deleteDoc(doc(db, "categories", id));
+            try {
+                await deleteDoc(doc(db, "categories", id));
+            } catch (e) {
+                alert("Erro ao apagar categoria: " + e.message);
+            }
         }
     };
 
     const addCategory = async () => {
         const name = prompt("Nome da nova categoria:");
         if (!name) return;
-        const id = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
-        await addDoc(collection(db, "categories"), {
-            label: name,
-            icon: 'MoreHorizontal',
-            color: 'bg-[#7F8C8D]',
-            type: 'despesa',
-            userId: user.uid
-        });
+        try {
+            await addDoc(collection(db, "categories"), {
+                label: name,
+                icon: 'MoreHorizontal',
+                color: 'bg-[#7F8C8D]',
+                type: 'despesa',
+                userId: user.uid
+            });
+        } catch (e) {
+            alert("Erro ao criar categoria: " + e.message);
+        }
     };
 
     const handleInlineUpdate = async (id, field, value) => {
