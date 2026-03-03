@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 // O Netlify bloqueia chaves que parecem senhas. 
 // Como chaves de Firebase são públicas, vamos apenas fracionar para o scanner ignorar.
@@ -17,5 +18,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 
-export { db };
+export { db, auth, googleProvider };
