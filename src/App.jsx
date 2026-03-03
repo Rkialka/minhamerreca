@@ -208,10 +208,7 @@ function LoginPage({ onLogin }) {
         <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-100 flex items-center justify-center p-4">
             <div className="w-full max-w-sm">
                 <div className="text-center mb-8">
-                    <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-purple-700 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg">
-                        <DollarSign size={40} className="text-white" />
-                    </div>
-                    <h1 className="text-2xl font-black text-gray-800 font-outfit">Minha Merreca</h1>
+                    <img src="/logo.png" alt="Minha Merreca" className="w-36 h-auto mx-auto mb-2" />
                     <p className="text-sm text-gray-400 mt-1">{isRegister ? 'Crie sua conta' : 'Entre na sua conta'}</p>
                 </div>
 
@@ -325,7 +322,7 @@ function MinhaMerrecaContent() {
     const [showMobileFilter, setShowMobileFilter] = useState(false);
     const [merrecaOpen, setMerrecaOpen] = useState(false);
     const [chatMessages, setChatMessages] = useState([
-        { role: 'assistant', content: 'Olá! Sou a Merreca, sua assistente financeira. Como posso ajudar você hoje?' }
+        { role: 'assistant', content: 'Olá! Sou a Merreca ✨, sua consultora financeira IA. Posso te ajudar a:\n\n📄 Importar extratos bancários (PDF, Excel, OFX)\n📸 Fotografar recibos e boletos\n🎤 Ouvir você por voz\n📊 Criar relatórios personalizados\n📱 Compartilhar resumos no WhatsApp\n\nEscolha uma opção abaixo ou me pergunte qualquer coisa!' }
     ]);
     const [chatInput, setChatInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -376,42 +373,85 @@ function MinhaMerrecaContent() {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // --- DATA MIGRATION (one-time: assign orphan docs to current user) ---
+    // --- DATA MIGRATION (assign orphan docs OR reassign old userId to current user) ---
     const [migrating, setMigrating] = useState(false);
     useEffect(() => {
         if (!user) return;
-        const migrateKey = `migrated_${user.uid}`;
-        if (localStorage.getItem(migrateKey)) return;
 
         const runMigration = async () => {
-            setMigrating(true);
+            console.log('[MIGRATION] Iniciando migração para usuário:', user.uid, user.email);
             const collections = ['transactions', 'categories', 'goals', 'chat_history'];
             let totalMigrated = 0;
             try {
-                for (const col of collections) {
-                    const snapshot = await getDocs(collection(db, col));
-                    const orphanDocs = snapshot.docs.filter(d => !d.data().userId);
-                    if (orphanDocs.length === 0) continue;
+                // First check if current user has ANY data
+                const userCheck = await getDocs(query(collection(db, 'transactions'), where('userId', '==', user.uid)));
+                const userHasData = userCheck.docs.length > 0;
+                console.log(`[MIGRATION] Usuário atual tem dados: ${userHasData} (${userCheck.docs.length} transactions)`);
 
-                    const batch = writeBatch(db);
-                    orphanDocs.forEach(d => {
-                        batch.update(doc(db, col, d.id), { userId: user.uid });
-                    });
-                    await batch.commit();
-                    totalMigrated += orphanDocs.length;
+                if (userHasData) {
+                    console.log('[MIGRATION] Usuário já tem dados, pulando migração');
+                    return;
                 }
-                localStorage.setItem(migrateKey, 'true');
-                if (totalMigrated > 0) {
-                    console.log(`Migração concluída: ${totalMigrated} documentos associados ao usuário`);
+
+                // User has no data - reassign ALL docs (orphan or from old userId) to current user
+                for (const col of collections) {
+                    console.log(`[MIGRATION] Lendo coleção: ${col}...`);
+                    const snapshot = await getDocs(collection(db, col));
+                    console.log(`[MIGRATION] ${col}: ${snapshot.docs.length} docs total`);
+
+                    // Find docs that DON'T belong to current user (orphan OR old userId)
+                    const docsToMigrate = snapshot.docs.filter(d => d.data().userId !== user.uid);
+                    console.log(`[MIGRATION] ${col}: ${docsToMigrate.length} docs para migrar`);
+                    if (docsToMigrate.length === 0) continue;
+
+                    setMigrating(true);
+                    // Firestore batch limit = 500 ops, split into chunks
+                    const BATCH_SIZE = 450;
+                    for (let i = 0; i < docsToMigrate.length; i += BATCH_SIZE) {
+                        const chunk = docsToMigrate.slice(i, i + BATCH_SIZE);
+                        console.log(`[MIGRATION] ${col}: batch ${Math.floor(i / BATCH_SIZE) + 1} com ${chunk.length} docs`);
+                        const batch = writeBatch(db);
+                        chunk.forEach(d => {
+                            batch.update(doc(db, col, d.id), { userId: user.uid });
+                        });
+                        await batch.commit();
+                        console.log(`[MIGRATION] ${col}: batch commitado com sucesso`);
+                        totalMigrated += chunk.length;
+                    }
                 }
+                console.log(`[MIGRATION] Migração concluída: ${totalMigrated} documentos associados ao usuário`);
             } catch (e) {
-                console.error('Erro na migração:', e);
+                console.error('[MIGRATION] Erro na migração:', e);
+                console.error('[MIGRATION] Erro detalhes:', e.code, e.message);
             } finally {
                 setMigrating(false);
             }
         };
 
         runMigration();
+    }, [user]);
+
+    // ONE-TIME: Limpar histórico de chat antigo
+    useEffect(() => {
+        if (!user) return;
+        if (localStorage.getItem('chat_cleared_v2')) return;
+        const clearOldChat = async () => {
+            try {
+                const snapshot = await getDocs(query(collection(db, "chat_history"), where("userId", "==", user.uid)));
+                if (snapshot.docs.length > 0) {
+                    const BATCH_SIZE = 450;
+                    for (let i = 0; i < snapshot.docs.length; i += BATCH_SIZE) {
+                        const chunk = snapshot.docs.slice(i, i + BATCH_SIZE);
+                        const batch = writeBatch(db);
+                        chunk.forEach(d => batch.delete(doc(db, "chat_history", d.id)));
+                        await batch.commit();
+                    }
+                }
+                localStorage.setItem('chat_cleared_v2', 'true');
+                setChatMessages([{ role: 'assistant', content: 'Olá! Sou a Merreca ✨, sua consultora financeira IA. Posso te ajudar a:\n\n📄 Importar extratos bancários (PDF, Excel, OFX)\n📸 Fotografar recibos e boletos\n🎤 Ouvir você por voz\n📊 Criar relatórios personalizados\n📱 Compartilhar resumos no WhatsApp\n\nEscolha uma opção abaixo ou me pergunte qualquer coisa!' }]);
+            } catch (e) { console.error('Erro ao limpar chat:', e); }
+        };
+        clearOldChat();
     }, [user]);
 
     // Sync Chat do Firebase
@@ -492,6 +532,136 @@ function MinhaMerrecaContent() {
         };
 
         recognition.start();
+    };
+
+    // --- VOICE IN CHAT ---
+    const startChatVoice = () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast("Seu navegador não suporta comandos de voz 😢");
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'pt-BR';
+        recognition.interimResults = false;
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = () => {
+            setIsListening(false);
+            showToast("Não consegui ouvir. Tente novamente 🎤");
+        };
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            showToast(`🎤 "${transcript}"`);
+            askMerreca(transcript);
+        };
+
+        recognition.start();
+        showToast("Ouvindo... fale agora 🎤");
+    };
+
+    // --- WHATSAPP SHARE ---
+    const shareViaWhatsApp = () => {
+        const month = MONTHS[viewMonth];
+        const topCats = Object.entries(
+            monthTransactions
+                .filter(t => {
+                    const type = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    return type === 'saida' || type === 'despesa';
+                })
+                .reduce((acc, t) => {
+                    const cat = categories[t.category]?.label || 'Outros';
+                    acc[cat] = (acc[cat] || 0) + Math.abs(Number(t.amount) || 0);
+                    return acc;
+                }, {})
+        ).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        const topCatsText = topCats.map(([cat, val], i) => `${i + 1}. ${cat}: ${formatBoleto(val)}`).join('\n');
+
+        const text = `📊 *Resumo Financeiro - ${month}/${viewYear}*\n\n` +
+            `💰 Entradas: ${formatBoleto(totals.income)}\n` +
+            `💸 Saídas: ${formatBoleto(totals.expense)}\n` +
+            `📈 Saldo: ${formatBoleto(totals.balance)}\n\n` +
+            `🏷️ *Top Categorias de Gastos:*\n${topCatsText}\n\n` +
+            `_Gerado por Minha Merreca ✨_\nhttps://minhamerreca.com.br`;
+
+        const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank');
+    };
+
+    // --- EXPORT CHAT REPORT AS PDF ---
+    const exportChatReportPDF = (reportContent) => {
+        try {
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const margin = 15;
+            const maxWidth = pageWidth - (margin * 2);
+            let yPos = 20;
+
+            // Header
+            pdf.setFillColor(142, 68, 173); // #8E44AD
+            pdf.rect(0, 0, pageWidth, 35, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(18);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Merreca - Relatório Financeiro', margin, 22);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'normal');
+            pdf.text(`${MONTHS[viewMonth]} ${viewYear}`, margin, 30);
+
+            yPos = 45;
+            pdf.setTextColor(51, 51, 51);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'normal');
+
+            // Split content into lines
+            const lines = reportContent.split('\n');
+            for (const line of lines) {
+                if (yPos > 270) {
+                    pdf.addPage();
+                    yPos = 20;
+                }
+
+                const cleanLine = line.replace(/\*\*/g, '').trim();
+                if (!cleanLine) {
+                    yPos += 4;
+                    continue;
+                }
+
+                // Check if it's a header line (starts with emoji or has bold markers)
+                const isHeader = /^[📊💰💸📈🏷️📅🎯⚠️✨📋💡🔍📌]/.test(line) || line.startsWith('##');
+                if (isHeader) {
+                    pdf.setFontSize(12);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setTextColor(142, 68, 173);
+                } else {
+                    pdf.setFontSize(10);
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setTextColor(51, 51, 51);
+                }
+
+                const wrappedLines = pdf.splitTextToSize(cleanLine, maxWidth);
+                pdf.text(wrappedLines, margin, yPos);
+                yPos += wrappedLines.length * (isHeader ? 7 : 5);
+            }
+
+            // Footer
+            const totalPages = pdf.internal.getNumberOfPages();
+            for (let i = 1; i <= totalPages; i++) {
+                pdf.setPage(i);
+                pdf.setFontSize(8);
+                pdf.setTextColor(150, 150, 150);
+                pdf.text(`Minha Merreca - minhamerreca.com.br | Página ${i}/${totalPages}`, margin, 290);
+            }
+
+            pdf.save(`Relatorio-Merreca-${MONTHS[viewMonth]}-${viewYear}.pdf`);
+            showToast("Relatório PDF exportado com sucesso! 📄");
+        } catch (e) {
+            console.error(e);
+            showToast("Erro ao gerar PDF 😢");
+        }
     };
 
     // --- GOAL ACTIONS ---
@@ -671,12 +841,10 @@ function MinhaMerrecaContent() {
         monthTransactions.forEach((t) => {
             const rawType = t.type || 'saida';
             const type = rawType.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const status = (t.status || 'pendente').toLowerCase();
             let amount = t.amount;
             if (typeof amount === 'string') amount = parseFloat(amount.replace(',', '.'));
             amount = Number(amount);
             if (t.ignoreInReports) return;
-            if (status !== 'pago') return;
             if (isNaN(amount) || amount === 0) return;
             const absAmount = Math.abs(amount);
             if (type === 'entrada' || type === 'receita') income += absAmount;
@@ -695,9 +863,7 @@ function MinhaMerrecaContent() {
         filteredTransactions.forEach(t => {
             const rawType = t.type || 'saida';
             const type = rawType.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const status = (t.status || 'pendente').toLowerCase();
             if (t.ignoreInReports) return;
-            if (status !== 'pago') return;
             if (type === 'saida' || type === 'despesa') {
                 let amount = t.amount;
                 if (typeof amount === 'string') amount = parseFloat(amount.replace(',', '.'));
@@ -727,7 +893,6 @@ function MinhaMerrecaContent() {
         const monthExpense = new Array(12).fill(0);
         transactions.forEach(t => {
             if (t.ignoreInReports) return;
-            if ((t.status || '').toLowerCase() !== 'pago') return;
             const d = new Date(t.date + 'T12:00:00');
             if (d.getFullYear() === viewYear) {
                 const m = d.getMonth();
@@ -943,6 +1108,32 @@ function MinhaMerrecaContent() {
                     fullText += textContent.items.map(item => item.str).join(' ') + "\n";
                 }
                 fileContent = fullText;
+            } else if (file.name.toLowerCase().endsWith('.ofx')) {
+                const text = await file.text();
+                // OFX is SGML/XML - extract transactions
+                const transactions = [];
+                const stmtTrnRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+                let match;
+                while ((match = stmtTrnRegex.exec(text)) !== null) {
+                    const block = match[1];
+                    const getVal = (tag) => { const m = block.match(new RegExp(`<${tag}>(.*?)(?:\n|<)`, 'i')); return m ? m[1].trim() : ''; };
+                    const dtRaw = getVal('DTPOSTED');
+                    const date = dtRaw.length >= 8 ? `${dtRaw.slice(0,4)}-${dtRaw.slice(4,6)}-${dtRaw.slice(6,8)}` : dtRaw;
+                    const amount = parseFloat(getVal('TRNAMT')) || 0;
+                    const memo = getVal('MEMO') || getVal('NAME') || 'Sem descricao';
+                    const type = amount >= 0 ? 'CREDITO' : 'DEBITO';
+                    transactions.push(`${date} | ${type} | R$ ${Math.abs(amount).toFixed(2)} | ${memo}`);
+                }
+                // Also try to get account info
+                const acctId = text.match(/<ACCTID>(.*?)(?:\n|<)/i);
+                const bankId = text.match(/<BANKID>(.*?)(?:\n|<)/i);
+                let header = `Extrato OFX importado`;
+                if (bankId) header += ` - Banco: ${bankId[1].trim()}`;
+                if (acctId) header += ` - Conta: ${acctId[1].trim()}`;
+                header += `\nTotal de ${transactions.length} transacoes encontradas:\n\n`;
+                fileContent = header + (transactions.length > 0
+                    ? `Data | Tipo | Valor | Descricao\n${transactions.join('\n')}`
+                    : 'Nenhuma transacao encontrada no arquivo OFX.');
             }
 
             if (!fileContent.trim() && file.type === 'application/pdf') {
@@ -972,7 +1163,7 @@ function MinhaMerrecaContent() {
         setChatInput('');
         setIsTyping(true);
 
-        const apiKey = "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";
+        const apiKey = "REDACTED";
 
         try {
             const monthTxs = monthTransactions.filter(t => !t.ignoreInReports && t.status === 'pago');
@@ -984,36 +1175,54 @@ function MinhaMerrecaContent() {
                 return `${m}/${viewYear}: Entradas ${formatBoleto(inc)}, Saídas ${formatBoleto(exp)}`;
             }).filter(Boolean).join('\n');
 
-            const systemPrompt = `Você é a "Merreca", a consultora financeira pessoal e inteligente mais top do Brasil.
- Seu estilo é uma mistura de Nathalia Arcuri (direta, focada em metas e economia) com uma assistente premium de alta tecnologia.
- 
- DIRETRIZES DE PERSONALIDADE:
- 1. Seja PROATIVA: Se você ver que o usuário gastou muito em uma categoria, avise! Se o saldo estiver baixo, sugira economia. 
- 2. Seja DIVERTIDA mas PROFISSIONAL: Use emojis ocasionalmente ✨, mas mantenha o foco nos números.
- 3. SEMPRE sugira 3 ações práticas ao final: "Eu posso: 1. Criticar seus gastos com iFood; 2. Analisar esse PDF de extrato; 3. Planejar sua próxima viagem."
- 4. Se o usuário mandar um arquivo, analise TUDO detalhadamente e sugira os lançamentos exatos.
+            const systemPrompt = `Você é a "Merreca", consultora financeira pessoal inteligente. Estilo direto, focado em metas e economia.
 
- DADOS ATUAIS:
- - Saldo do Mês: ${formatBoleto(totals.balance)}
- - Total Entradas: ${formatBoleto(totals.income)}
- - Total Saídas: ${formatBoleto(totals.expense)}
- - Histórico do Ano: ${historicalSummary}
- - Últimos Lançamentos: ${summary}
- 
- ESTRUTURA DE CATEGORIAS DISPONÍVEIS:
- ${Object.entries(categories).map(([id, c]) => `${id}: ${c.label}`).join(', ')}
+REGRAS DE FORMATAÇÃO (OBRIGATÓRIO):
+- Responda SEMPRE de forma organizada com quebras de linha
+- Use listas com "- " para itens e "1. " para passos numerados
+- Use **negrito** para valores, categorias e títulos de seção
+- Use NO MÁXIMO 1-2 emojis por resposta (apenas no início de títulos de seção)
+- NUNCA coloque vários emojis juntos
+- Separe seções com uma linha em branco
+- Seja concisa: frases curtas e objetivas
+- Ao sugerir ações ao final, use lista numerada simples
 
- REGRA DE LANÇAMENTO (OBRIGATÓRIO):
- Sempre que identificar uma nova despesa ou receita (seja por texto ou arquivo), inclua no final da resposta:
- [NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD" }]
- 
- Use a categoria que melhor se encaixa. Se não souber, use 'outros'.`;
+DADOS ATUAIS (${MONTHS[viewMonth]}/${viewYear}):
+- Saldo do Mês: ${formatBoleto(totals.balance)}
+- Total Entradas: ${formatBoleto(totals.income)}
+- Total Saídas: ${formatBoleto(totals.expense)}
+- Histórico do Ano: ${historicalSummary}
+- Últimos Lançamentos: ${summary}
 
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+CATEGORIAS DISPONÍVEIS:
+${Object.entries(categories).map(([id, c]) => `${id}: ${c.label}`).join(', ')}
+
+REGRA DE LANÇAMENTO:
+Quando identificar uma nova despesa ou receita, inclua no final:
+[NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD" }]
+Use a categoria que melhor se encaixa. Se não souber, use 'outros'.
+
+REGRA DE RELATÓRIO:
+Quando pedirem relatório, gere com estas seções separadas por linhas em branco:
+- **Resumo Geral** - entradas, saídas, saldo
+- **Top Gastos por Categoria** - lista ordenada
+- **Comparativo** - com meses anteriores se houver dados
+- **Alertas** - gastos acima da média
+- **Dicas** - 3 sugestões práticas e personalizadas
+
+REGRA DE EXTRATO OFX:
+Analise transações, classifique nas categorias e sugira lançamentos com [NEW_TRANSACTION].`;
+
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'HTTP-Referer': 'https://minhamerreca.com.br',
+                    'X-Title': 'Minha Merreca'
+                },
                 body: JSON.stringify({
-                    model: 'gpt-4o',
+                    model: 'anthropic/claude-3.5-haiku',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         ...chatMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
@@ -1024,7 +1233,7 @@ function MinhaMerrecaContent() {
             });
 
             const data = await response.json();
-            if (data.error) throw new Error(data.error.message);
+            if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
 
             const aiContent = data.choices[0].message.content;
 
@@ -1169,6 +1378,64 @@ function MinhaMerrecaContent() {
         );
     };
 
+    // --- Formatted message renderer for desktop chat ---
+    const renderFormattedMessage = (content, isUser = false) => {
+        const lines = content.split('\n');
+        const renderInline = (text, keyPrefix) => {
+            const parts = text.split(/(\*\*[^*]+\*\*)/g);
+            return parts.map((part, i) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                    return <strong key={`${keyPrefix}-${i}`} className="font-black">{part.slice(2, -2)}</strong>;
+                }
+                return <span key={`${keyPrefix}-${i}`}>{part}</span>;
+            });
+        };
+        const elements = [];
+        let listItems = [];
+        let listType = null;
+        const flushList = () => {
+            if (listItems.length > 0) {
+                if (listType === 'number') {
+                    elements.push(
+                        <ol key={`ol-${elements.length}`} className="space-y-1.5 my-2 ml-1">
+                            {listItems.map((item, i) => (
+                                <li key={i} className="flex gap-2 items-start">
+                                    <span className={`font-black text-xs mt-0.5 shrink-0 ${isUser ? 'text-white/70' : 'text-[#8E44AD]'}`}>{item.num}.</span>
+                                    <span>{renderInline(item.text, `li-${elements.length}-${i}`)}</span>
+                                </li>
+                            ))}
+                        </ol>
+                    );
+                } else {
+                    elements.push(
+                        <ul key={`ul-${elements.length}`} className="space-y-1.5 my-2 ml-1">
+                            {listItems.map((item, i) => (
+                                <li key={i} className="flex gap-2 items-start">
+                                    <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${isUser ? 'bg-white/50' : 'bg-[#8E44AD]'}`}></span>
+                                    <span>{renderInline(item.text, `li-${elements.length}-${i}`)}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    );
+                }
+                listItems = [];
+                listType = null;
+            }
+        };
+        for (let i = 0; i < lines.length; i++) {
+            const trimmed = lines[i].trim();
+            const numMatch = trimmed.match(/^(\d+)\.\s+(.+)/);
+            if (numMatch) { if (listType !== 'number') flushList(); listType = 'number'; listItems.push({ num: numMatch[1], text: numMatch[2] }); continue; }
+            const bulletMatch = trimmed.match(/^[-•]\s+(.+)/);
+            if (bulletMatch) { if (listType !== 'bullet') flushList(); listType = 'bullet'; listItems.push({ text: bulletMatch[1] }); continue; }
+            flushList();
+            if (!trimmed) { elements.push(<div key={`sp-${i}`} className="h-2" />); continue; }
+            elements.push(<p key={`p-${i}`} className="leading-relaxed">{renderInline(trimmed, `p-${i}`)}</p>);
+        }
+        flushList();
+        return <div className="space-y-0.5">{elements}</div>;
+    };
+
     const renderMerrecaChat = () => {
         if (!merrecaOpen) return null;
 
@@ -1178,67 +1445,148 @@ function MinhaMerrecaContent() {
                     onClose={() => setMerrecaOpen(false)}
                     messages={chatMessages}
                     onSendMessage={askMerreca}
-                    isLoading={isTyping} // Assuming isTyping isn't available in scope or needs to be passed. isTyping IS available in scope?
+                    isLoading={isTyping}
+                    onFileUpload={handleFileUpload}
+                    onVoice={startChatVoice}
+                    isListening={isListening}
+                    onShareWhatsApp={shareViaWhatsApp}
+                    onExportReport={exportChatReportPDF}
                 />
             );
         }
 
+        const desktopShowChips = chatMessages.length <= 2;
+        const isReportMsg = (content) => content && content.length > 300 && (content.includes('Relatório') || content.includes('relatório') || content.includes('RELATÓRIO'));
+
         return (
-            <div className="fixed inset-0 bg-[#2C3E50]/80 backdrop-blur-md z-[300] flex items-center justify-center p-4" onClick={() => setMerrecaOpen(false)}>
-                <div className="bg-white w-full max-w-2xl h-[80vh] rounded-[3rem] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-                    <div className="bg-gradient-to-br from-[#8E44AD] via-[#9B59B6] to-[#6C3483] p-8 text-white flex items-center justify-between relative overflow-hidden">
-                        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-                        <div className="flex items-center gap-5 relative z-10">
-                            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md animate-pulse-soft">
-                                <Sparkles size={28} className="text-yellow-300" />
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[300] flex items-center justify-center p-4" onClick={() => setMerrecaOpen(false)}>
+                <div className="bg-white w-full max-w-2xl h-[80vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col border border-gray-100" onClick={e => e.stopPropagation()}>
+                    {/* Clean Header */}
+                    <div className="bg-white px-8 py-5 flex items-center justify-between border-b border-gray-100">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#8E44AD] to-[#9B59B6] flex items-center justify-center shadow-sm">
+                                <Sparkles size={20} className="text-white" />
                             </div>
                             <div>
-                                <h2 className="text-3xl font-black tracking-tight">Merreca ✨</h2>
-                                <p className="opacity-80 text-xs font-bold uppercase tracking-widest mt-1">Sua Consultora Financeira PRO</p>
+                                <h2 className="text-lg font-black text-slate-800 tracking-tight">Merreca</h2>
+                                <p className="text-[9px] font-bold text-[#8E44AD] uppercase tracking-widest">Consultora Financeira IA</p>
                             </div>
                         </div>
-                        <button onClick={() => setMerrecaOpen(false)} className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl transition-all relative z-10">
-                            <X size={20} />
+                        <button onClick={() => setMerrecaOpen(false)} className="p-3 rounded-xl text-slate-300 hover:bg-gray-50 hover:text-slate-500 transition-all">
+                            <X size={18} />
                         </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-8 space-y-6 flex flex-col bg-[#FDFDFD] ">
+                    {/* Messages */}
+                    <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5 bg-gray-50/50">
                         {chatMessages.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                                <div className={`max-w-[85%] p-5 rounded-[2rem] font-bold text-sm border whitespace-pre-wrap ${msg.role === 'assistant' ? 'bg-white text-slate-800 border-gray-100 ' : 'bg-[#8E44AD] text-white border-transparent'}`}>
-                                    {msg.content.split('**').map((part, i) => i % 2 === 1 ? <b key={i} className="font-black">{part}</b> : part)}
+                            <div key={idx}>
+                                <div className={`flex ${msg.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
+                                    {msg.role === 'assistant' && (
+                                        <div className="w-8 h-8 rounded-lg bg-[#8E44AD] flex items-center justify-center mr-3 mt-1 shrink-0">
+                                            <Sparkles size={14} className="text-white" />
+                                        </div>
+                                    )}
+                                    <div className={`max-w-[80%] px-5 py-4 rounded-2xl text-sm leading-relaxed ${msg.role === 'assistant' ? 'bg-white text-slate-700 border border-gray-100 shadow-sm rounded-tl-md font-medium' : 'bg-[#8E44AD] text-white rounded-tr-md font-bold'}`}>
+                                        {renderFormattedMessage(msg.content, msg.role === 'user')}
+                                    </div>
                                 </div>
+                                {msg.role === 'assistant' && isReportMsg(msg.content) && (
+                                    <div className="flex justify-start ml-11 mt-2">
+                                        <button
+                                            onClick={() => exportChatReportPDF(msg.content)}
+                                            className="flex items-center gap-2 px-4 py-2 bg-[#8E44AD]/10 text-[#8E44AD] rounded-xl text-xs font-bold hover:bg-[#8E44AD]/20 transition-all active:scale-95"
+                                        >
+                                            <Download size={14} />
+                                            Exportar como PDF
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ))}
+
+                        {/* Desktop Suggestion Chips */}
+                        {desktopShowChips && !isTyping && (
+                            <div className="py-2">
+                                <p className="text-xs font-bold text-slate-400 mb-3 ml-1">Sugestões rápidas</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { icon: '📄', label: 'Importar extrato bancário', action: () => document.getElementById('desktop-file-input')?.click() },
+                                        { icon: '🎤', label: 'Falar com a Merreca', action: startChatVoice },
+                                        { icon: '📊', label: 'Gerar relatório do mês', action: () => askMerreca('Gere um relatório completo e detalhado do mês atual com análise de gastos por categoria, comparativo com mês anterior e dicas de economia.') },
+                                        { icon: '📱', label: 'Compartilhar no WhatsApp', action: shareViaWhatsApp },
+                                    ].map((chip, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={chip.action}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-2xl text-xs font-bold text-slate-600 hover:border-[#8E44AD] hover:text-[#8E44AD] transition-all active:scale-95 shadow-sm"
+                                        >
+                                            <span>{chip.icon}</span>
+                                            {chip.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {isTyping && (
+                            <div className="flex justify-start">
+                                <div className="w-8 h-8 rounded-lg bg-[#8E44AD] flex items-center justify-center mr-3 shrink-0">
+                                    <Sparkles size={14} className="text-white" />
+                                </div>
+                                <div className="bg-white px-5 py-4 rounded-2xl rounded-tl-md border border-gray-100 shadow-sm flex items-center gap-1.5">
+                                    <div className="w-1.5 h-1.5 bg-[#8E44AD]/40 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                    <div className="w-1.5 h-1.5 bg-[#8E44AD]/40 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                    <div className="w-1.5 h-1.5 bg-[#8E44AD]/40 rounded-full animate-bounce"></div>
+                                </div>
+                            </div>
+                        )}
                         <div id="chat-bottom"></div>
                     </div>
-                    <div className="p-8 bg-white border-t border-gray-100 ">
+                    {/* Clean Input */}
+                    <div className="px-8 py-5 bg-white border-t border-gray-100">
                         <form
                             onSubmit={(e) => { e.preventDefault(); askMerreca(chatInput); }}
-                            className="flex items-center gap-3 bg-gray-50 p-2 rounded-[2.5rem] border border-gray-100 focus-within:border-[#8E44AD] transition-all"
+                            className="flex items-center gap-3"
                         >
-                            <label className="flex items-center justify-center w-12 h-12 rounded-full text-slate-400 hover:text-[#8E44AD] hover:bg-white hover:shadow-md cursor-pointer transition-all shrink-0">
-                                <Paperclip size={22} />
+                            <label className="p-2.5 rounded-xl text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50 cursor-pointer transition-all shrink-0">
+                                <Paperclip size={20} />
                                 <input
+                                    id="desktop-file-input"
                                     type="file"
                                     className="hidden"
                                     onChange={handleFileUpload}
-                                    accept="image/*,application/pdf,.xls,.xlsx"
+                                    accept="image/*,application/pdf,.xls,.xlsx,.ofx"
                                 />
                             </label>
 
-                            <input
-                                value={chatInput}
-                                onChange={(e) => setChatInput(e.target.value)}
-                                placeholder="Pergunte ou anexe algo..."
-                                className="flex-1 bg-transparent px-2 py-4 font-bold text-sm outline-none text-slate-700 "
-                            />
+                            <div className="flex-1 bg-gray-50 rounded-xl border border-gray-200 focus-within:border-[#8E44AD] focus-within:ring-2 focus-within:ring-[#8E44AD]/10 transition-all">
+                                <input
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder="Pergunte à Merreca..."
+                                    className="w-full bg-transparent px-4 py-3 font-bold text-sm outline-none text-slate-700 placeholder:text-slate-300 placeholder:font-medium"
+                                />
+                            </div>
+
+                            {/* Desktop Mic button */}
+                            <button
+                                type="button"
+                                onClick={startChatVoice}
+                                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+                                    isListening
+                                        ? 'bg-[#8E44AD] text-white shadow-md animate-pulse'
+                                        : 'text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50'
+                                }`}
+                            >
+                                <Mic size={20} />
+                            </button>
 
                             <button
                                 type="submit"
                                 disabled={isTyping || !chatInput.trim()}
-                                className="bg-[#8E44AD] text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shrink-0"
+                                className="bg-[#8E44AD] text-white w-11 h-11 rounded-xl flex items-center justify-center shadow-md active:scale-95 transition-all disabled:opacity-30 shrink-0"
                             >
-                                <SendHorizontal size={20} />
+                                <SendHorizontal size={18} />
                             </button>
                         </form>
                     </div>
@@ -1595,7 +1943,7 @@ function MinhaMerrecaContent() {
     if (showSplash) return (
         <div className="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center animate-out fade-out duration-500 delay-[2500ms]">
             <div className="animate-in zoom-in duration-1000">
-                <img src="./logo.png" alt="Minha Merreca" className="w-64 h-auto object-contain mb-8" />
+                <img src="/logo.png" alt="Minha Merreca" className="w-64 h-auto object-contain mb-8" />
             </div>
             <div className="w-12 h-12 border-4 border-[#8E44AD] border-t-transparent rounded-full animate-spin"></div>
         </div>
@@ -1604,7 +1952,7 @@ function MinhaMerrecaContent() {
     if (showSuccessSplash) return (
         <div className="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center animate-in zoom-in duration-300">
             <div className="mb-8">
-                <img src="./logo.png" alt="Minha Merreca" className="w-56 h-auto object-contain" />
+                <img src="/logo.png" alt="Minha Merreca" className="w-56 h-auto object-contain" />
             </div>
             <div className="bg-[#8E44AD]/10 p-6 rounded-full mb-6">
                 <Check size={64} className="text-[#8E44AD]" strokeWidth={4} />
@@ -1626,7 +1974,7 @@ function MinhaMerrecaContent() {
                 </button>
 
                 <div className={`flex flex-col items-center mb-10 relative transition-all ${isSidebarCollapsed ? 'scale-75' : ''}`}>
-                    <img src="./logo.png" alt="Minha Merreca" className="w-[120px] h-auto object-contain" />
+                    <img src="/logo.png" alt="Minha Merreca" className="w-[120px] h-auto object-contain" />
                 </div>
 
                 <div className="flex flex-col gap-2 flex-1">
