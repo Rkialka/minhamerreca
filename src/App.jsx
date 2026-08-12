@@ -6,6 +6,8 @@ import {
     ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, EyeOff, Menu, SendHorizontal, Paperclip, FileText, Image, Mic, Target, Download, Moon, Sun, ArrowUpCircle, ArrowDownCircle, MoreVertical, Phone, Video, Inbox, LogOut, Mail
 } from 'lucide-react';
 import { MerrecaChatMobile } from './components/MerrecaChatMobile';
+import { parseMoney, splitInstallments } from './lib/money';
+import { addMonths, toISODate } from './lib/dates';
 import * as Tesseract from 'tesseract.js';
 import * as XLSX from 'xlsx';
 import * as pdfjs from 'pdfjs-dist';
@@ -842,7 +844,7 @@ function MinhaMerrecaContent() {
             const rawType = t.type || 'saida';
             const type = rawType.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             let amount = t.amount;
-            if (typeof amount === 'string') amount = parseFloat(amount.replace(',', '.'));
+            amount = parseMoney(amount);
             amount = Number(amount);
             if (t.ignoreInReports) return;
             if (isNaN(amount) || amount === 0) return;
@@ -866,7 +868,7 @@ function MinhaMerrecaContent() {
             if (t.ignoreInReports) return;
             if (type === 'saida' || type === 'despesa') {
                 let amount = t.amount;
-                if (typeof amount === 'string') amount = parseFloat(amount.replace(',', '.'));
+                amount = parseMoney(amount);
                 amount = Number(amount);
                 if (!isNaN(amount) && amount !== 0) {
                     const absAmount = Math.abs(amount);
@@ -897,7 +899,7 @@ function MinhaMerrecaContent() {
             if (d.getFullYear() === viewYear) {
                 const m = d.getMonth();
                 let amt = t.amount;
-                if (typeof amt === 'string') amt = parseFloat(amt.replace(',', '.'));
+                amt = parseMoney(amt);
                 amt = Number(amt);
                 if (isNaN(amt) || amt === 0) return;
                 const absAmt = Math.abs(amt);
@@ -927,7 +929,7 @@ function MinhaMerrecaContent() {
 
     // --- ACTIONS ---
     const handleSave = async () => {
-        const cleanAmount = parseFloat(amount.replace(/\./g, '').replace(',', '.')) || 0;
+        const cleanAmount = parseMoney(amount);
         const baseData = {
             userId: user.uid,
             amount: cleanAmount,
@@ -944,30 +946,51 @@ function MinhaMerrecaContent() {
         try {
             const batch = writeBatch(db);
             const startDate = new Date(entryDate + 'T12:00:00');
+            // Ao editar um lançamento fixo/parcelado que pertence a um grupo,
+            // oferece propagar os campos compartilhados para os irmãos
+            const propagateToGroup = async (edited) => {
+                if (!edited?.groupId) return;
+                const siblings = transactions.filter(t => t.groupId === edited.groupId && t.id !== editingId);
+                if (siblings.length === 0) return;
+                if (!window.confirm(`Aplicar essas mudanças às outras ${siblings.length} ocorrências (parcelas/meses) também?`)) return;
+                const shared = {
+                    description: baseData.description,
+                    category: baseData.category,
+                    paymentMethod: baseData.paymentMethod,
+                    observations: baseData.observations,
+                    ignoreInReports: baseData.ignoreInReports,
+                    updatedAt: serverTimestamp()
+                };
+                const b = writeBatch(db);
+                siblings.forEach(s => b.update(doc(db, "transactions", s.id), shared));
+                await b.commit();
+            };
             if (repeatType === 'fixo') {
                 if (editingId) {
                     await updateDoc(doc(db, "transactions", editingId), {
                         ...baseData,
                         date: entryDate
                     });
+                    await propagateToGroup(transactions.find(t => t.id === editingId));
                 } else {
+                    const groupId = doc(collection(db, "transactions")).id;
                     for (let i = 0; i < 12; i++) {
-                        const d = new Date(startDate);
-                        d.setMonth(d.getMonth() + i);
                         const newDoc = doc(collection(db, "transactions"));
-                        batch.set(newDoc, { ...baseData, date: d.toISOString().split('T')[0], status: i === 0 ? status : 'pendente' });
+                        batch.set(newDoc, { ...baseData, groupId, date: toISODate(addMonths(startDate, i)), status: i === 0 ? status : 'pendente' });
                     }
                     await batch.commit();
                 }
             } else if (repeatType === 'parcelado') {
                 if (editingId) {
                     await updateDoc(doc(db, "transactions", editingId), { ...baseData, date: entryDate });
+                    await propagateToGroup(transactions.find(t => t.id === editingId));
                 } else {
+                    // valor digitado = TOTAL da compra; cada parcela recebe sua fração
+                    const parts = splitInstallments(cleanAmount, installments);
+                    const groupId = doc(collection(db, "transactions")).id;
                     for (let i = 0; i < installments; i++) {
-                        const d = new Date(startDate);
-                        d.setMonth(d.getMonth() + i);
                         const newDoc = doc(collection(db, "transactions"));
-                        batch.set(newDoc, { ...baseData, date: d.toISOString().split('T')[0], status: 'pendente', parcelaNum: i + 1, parcelasTotal: installments });
+                        batch.set(newDoc, { ...baseData, amount: parts[i], groupId, totalAmount: cleanAmount, date: toISODate(addMonths(startDate, i)), status: 'pendente', parcelaNum: i + 1, parcelasTotal: installments });
                     }
                     await batch.commit();
                 }
@@ -1168,7 +1191,7 @@ function MinhaMerrecaContent() {
             const monthTxs = monthTransactions.filter(t => !t.ignoreInReports);
             const txList = monthTxs.map(t => {
                 let amt = t.amount;
-                if (typeof amt === 'string') amt = parseFloat(amt.replace(',', '.'));
+                amt = parseMoney(amt);
                 amt = Number(amt) || 0;
                 return `${t.date} | ${t.description} | ${formatBoleto(Math.abs(amt))} | ${categories[t.category]?.label || 'Outros'} | ${(t.type || 'saida').toLowerCase()} | ${t.status || 'pago'}`;
             }).join('\n');
@@ -1184,7 +1207,7 @@ function MinhaMerrecaContent() {
                 const rawType = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
                 if (rawType === 'entrada' || rawType === 'receita') {
                     let amt = t.amount;
-                    if (typeof amt === 'string') amt = parseFloat(amt.replace(',', '.'));
+                    amt = parseMoney(amt);
                     amt = Math.abs(Number(amt) || 0);
                     const catLabel = categories[t.category]?.label || 'Outros';
                     incomeCats[catLabel] = (incomeCats[catLabel] || 0) + amt;
@@ -1896,7 +1919,7 @@ Analise transações, classifique e sugira lançamentos com [NEW_TRANSACTION].`;
                             type="text"
                             defaultValue={t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             onBlur={(e) => {
-                                const val = parseFloat(e.target.value.replace(/\./g, '').replace(',', '.'));
+                                const val = parseMoney(e.target.value);
                                 if (!isNaN(val)) handleUpdate('amount', val);
                             }}
                             className="bg-transparent text-right outline-none w-[80px] hover:bg-purple-50 rounded p-1 transition-all"
@@ -1946,7 +1969,7 @@ Analise transações, classifique e sugira lançamentos com [NEW_TRANSACTION].`;
                         <p className={`text-xl font-black whitespace-nowrap ${isPlus ? 'text-green-500' : 'text-red-500'}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                         {t.repeatType === 'parcelado' ? (
                             <p className="text-[10px] font-black text-red-400 uppercase tracking-wider mt-0.5 text-right">
-                                {t.currentInstallment}/{t.installments} • {(PAYMENT_METHODS[t.paymentMethod] || PAYMENT_METHODS['CARD']).label.toUpperCase()}
+                                {t.parcelaNum || t.currentInstallment || 1}/{t.parcelasTotal || t.installments || 1} • {(PAYMENT_METHODS[t.paymentMethod] || PAYMENT_METHODS['CARD']).label.toUpperCase()}
                             </p>
                         ) : t.paymentMethod && (
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-0.5 text-right">
@@ -2284,7 +2307,7 @@ Analise transações, classifique e sugira lançamentos com [NEW_TRANSACTION].`;
                                     {repeatType === 'parcelado' && (
                                         <div className="flex items-center justify-between pt-2 border-t border-gray-200">
                                             <label className="text-[8px] font-black uppercase text-slate-400">Qtd</label>
-                                            <input type="number" min="1" max="72" value={installments} onChange={e => setInstallments(parseInt(e.target.value))} className="w-12 p-1 bg-white rounded-lg text-center font-black text-xs text-[#8E44AD] outline-none border border-gray-200" />
+                                            <input type="number" min="1" max="72" value={installments} onChange={e => setInstallments(Math.min(72, Math.max(1, parseInt(e.target.value, 10) || 1)))} className="w-12 p-1 bg-white rounded-lg text-center font-black text-xs text-[#8E44AD] outline-none border border-gray-200" />
                                         </div>
                                     )}
                                 </div>
