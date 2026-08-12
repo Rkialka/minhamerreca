@@ -734,7 +734,7 @@ function MinhaMerrecaContent() {
     const [entryType, setEntryType] = useState('saida'); // entrada, saida
     const [amount, setAmount] = useState('0,00');
     const [description, setDescription] = useState('');
-    const [selectedCat, setSelectedCat] = useState('dani');
+    const [selectedCat, setSelectedCat] = useState('outros');
     const [selectedPayment, setSelectedPayment] = useState('PIX');
     const [entryDate, setEntryDate] = useState(now.toISOString().split('T')[0]);
     const [repeatType, setRepeatType] = useState('avista'); // avista, fixo, parcelado
@@ -1199,8 +1199,9 @@ ${Object.entries(categories).map(([id, c]) => `${id}: ${c.label}`).join(', ')}
 
 REGRA DE LANÇAMENTO:
 Quando identificar uma nova despesa ou receita, inclua no final:
-[NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD" }]
+[NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD", "paymentMethod": "PIX|CARD|CASH" }]
 Use a categoria que melhor se encaixa. Se não souber, use 'outros'.
+Use "paymentMethod": "CARD" quando o usuário mencionar crédito/cartão de crédito/parcelado, "CASH" para dinheiro, e "PIX" para pix/débito ou quando não especificado.
 
 REGRA DE RELATÓRIO:
 Quando pedirem relatório, gere com estas seções separadas por linhas em branco:
@@ -1246,7 +1247,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                         userId: user.uid,
                         status: 'pago',
                         repeatType: 'avista',
-                        paymentMethod: 'PIX', // Default
+                        paymentMethod: txData.paymentMethod || 'PIX',
                         installments: 1,
                         ignoreInReports: false,
                         createdAt: serverTimestamp(),
@@ -1899,9 +1900,13 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                     <h3 className="font-extrabold text-slate-700 text-sm leading-tight line-clamp-2 mt-1">{t.description}</h3>
                     <div className="text-right shrink-0">
                         <p className={`text-xl font-black whitespace-nowrap ${isPlus ? 'text-green-500' : 'text-red-500'}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                        {t.repeatType === 'parcelado' && (
+                        {t.repeatType === 'parcelado' ? (
                             <p className="text-[10px] font-black text-red-400 uppercase tracking-wider mt-0.5 text-right">
-                                {t.currentInstallment}/{t.installments} • CRÉDITO
+                                {t.currentInstallment}/{t.installments} • {(PAYMENT_METHODS[t.paymentMethod] || PAYMENT_METHODS['CARD']).label.toUpperCase()}
+                            </p>
+                        ) : t.paymentMethod && (
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-0.5 text-right">
+                                {PAYMENT_METHODS[t.paymentMethod]?.label.toUpperCase()}
                             </p>
                         )}
                     </div>
@@ -2020,8 +2025,8 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                 <div className="bg-gray-50 p-5 rounded-[2.5rem] space-y-4 border border-gray-100 flex-1 flex flex-col justify-center min-h-0">
                     <div className="flex bg-white p-1 rounded-[1.2rem] border border-gray-100 shrink-0">
-                        <button onClick={() => setEntryType('saida')} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[9px] uppercase tracking-widest transition-all ${entryType === 'saida' ? 'bg-[#FF4B4B] text-white shadow-lg shadow-red-100' : 'text-slate-200 '}`}>Gasto</button>
-                        <button onClick={() => setEntryType('entrada')} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[9px] uppercase tracking-widest transition-all ${entryType === 'entrada' ? 'bg-[#2ECC71] text-white shadow-lg shadow-green-100' : 'text-slate-200 '}`}>Ganhos</button>
+                        <button onClick={() => { setEntryType('saida'); setSelectedCat('outros'); }} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[9px] uppercase tracking-widest transition-all ${entryType === 'saida' ? 'bg-[#FF4B4B] text-white shadow-lg shadow-red-100' : 'text-slate-200 '}`}>Gasto</button>
+                        <button onClick={() => { setEntryType('entrada'); setSelectedCat('dani'); }} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[9px] uppercase tracking-widest transition-all ${entryType === 'entrada' ? 'bg-[#2ECC71] text-white shadow-lg shadow-green-100' : 'text-slate-200 '}`}>Ganhos</button>
                     </div>
 
                     <div className="text-center shrink-0 flex items-center justify-center relative group">
@@ -2060,7 +2065,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     onChange={e => setSelectedCat(e.target.value)}
                                     className="w-full p-3.5 bg-white rounded-[1.2rem] font-bold text-slate-700 outline-none border border-transparent focus:border-[#8E44AD]/20 transition-all text-xs appearance-none shadow-sm"
                                 >
-                                    {Object.entries(categories).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
+                                    {Object.entries(categories).filter(([, c]) => c.type === entryType).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
                                 </select>
                             </div>
                             <div>
