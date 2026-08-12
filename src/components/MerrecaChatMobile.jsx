@@ -142,7 +142,7 @@ export const MerrecaChatMobile = ({ onClose, messages, onSendMessage, isLoading,
                         </div>
                         <div>
                             <h3 className="font-black text-sm text-slate-800 tracking-tight">Merreca</h3>
-                            <p className="text-[9px] font-bold text-[#8E44AD] uppercase tracking-widest">Consultora IA</p>
+                            <p className="text-[11px] font-bold text-[#8E44AD] uppercase tracking-widest">Consultora IA</p>
                         </div>
                     </div>
                 </div>
@@ -245,7 +245,7 @@ export const MerrecaChatMobile = ({ onClose, messages, onSendMessage, isLoading,
             {/* Clean Input Area */}
             <div className="bg-white px-4 py-3 border-t border-gray-100 shrink-0 pb-8 lg:pb-3">
                 <div className="flex items-center gap-2">
-                    <label className="p-2.5 rounded-xl text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50 cursor-pointer transition-all shrink-0"
+                    <label className="p-2.5 rounded-xl text-slate-400 hover:text-[#8E44AD] hover:bg-purple-50 cursor-pointer transition-all shrink-0"
                         onClick={() => fileInputRef.current?.click()}
                     >
                         <Paperclip size={20} />
@@ -258,7 +258,7 @@ export const MerrecaChatMobile = ({ onClose, messages, onSendMessage, isLoading,
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             placeholder="Pergunte à Merreca..."
-                            className="w-full bg-transparent px-4 py-3 outline-none text-sm font-bold text-slate-700 placeholder:text-slate-300 placeholder:font-medium"
+                            className="w-full bg-transparent px-4 py-3 outline-none text-sm font-bold text-slate-700 placeholder:text-slate-400 placeholder:font-medium"
                         />
                     </div>
 
@@ -269,7 +269,7 @@ export const MerrecaChatMobile = ({ onClose, messages, onSendMessage, isLoading,
                             className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all shrink-0 ${
                                 isListening
                                     ? 'bg-[#8E44AD] text-white shadow-md animate-pulse'
-                                    : 'text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50'
+                                    : 'text-slate-400 hover:text-[#8E44AD] hover:bg-purple-50'
                             }`}
                         >
                             <Mic size={20} />
