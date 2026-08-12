@@ -6,6 +6,8 @@ import {
     ArrowRightLeft, Filter, Settings, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Coffee, Sparkles, EyeOff, Menu, SendHorizontal, Paperclip, FileText, Image, Mic, Target, Download, Moon, Sun, ArrowUpCircle, ArrowDownCircle, MoreVertical, Phone, Video, Inbox, LogOut, Mail
 } from 'lucide-react';
 import { MerrecaChatMobile } from './components/MerrecaChatMobile';
+import { parseMoney, formatMoney, splitInstallments } from './lib/money';
+import { addMonths, toISODate } from './lib/dates';
 import * as Tesseract from 'tesseract.js';
 import * as XLSX from 'xlsx';
 import * as pdfjs from 'pdfjs-dist';
@@ -56,7 +58,7 @@ const PAYMENT_METHODS = {
 
 const STATUS_OPTIONS = {
     'pago': { label: 'PAGO', color: 'bg-[#2ECC71] text-white' },
-    'pendente': { label: 'PENDENTE', color: 'bg-white text-slate-300 border border-slate-100' },
+    'pendente': { label: 'PENDENTE', color: 'bg-white text-slate-400 border border-slate-100' },
     'atrasado': { label: 'ATRASADO', color: 'bg-red-500 text-white' }
 };
 
@@ -734,7 +736,7 @@ function MinhaMerrecaContent() {
     const [entryType, setEntryType] = useState('saida'); // entrada, saida
     const [amount, setAmount] = useState('0,00');
     const [description, setDescription] = useState('');
-    const [selectedCat, setSelectedCat] = useState('dani');
+    const [selectedCat, setSelectedCat] = useState('outros');
     const [selectedPayment, setSelectedPayment] = useState('PIX');
     const [entryDate, setEntryDate] = useState(now.toISOString().split('T')[0]);
     const [repeatType, setRepeatType] = useState('avista'); // avista, fixo, parcelado
@@ -842,7 +844,7 @@ function MinhaMerrecaContent() {
             const rawType = t.type || 'saida';
             const type = rawType.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             let amount = t.amount;
-            if (typeof amount === 'string') amount = parseFloat(amount.replace(',', '.'));
+            amount = parseMoney(amount);
             amount = Number(amount);
             if (t.ignoreInReports) return;
             if (isNaN(amount) || amount === 0) return;
@@ -866,7 +868,7 @@ function MinhaMerrecaContent() {
             if (t.ignoreInReports) return;
             if (type === 'saida' || type === 'despesa') {
                 let amount = t.amount;
-                if (typeof amount === 'string') amount = parseFloat(amount.replace(',', '.'));
+                amount = parseMoney(amount);
                 amount = Number(amount);
                 if (!isNaN(amount) && amount !== 0) {
                     const absAmount = Math.abs(amount);
@@ -897,7 +899,7 @@ function MinhaMerrecaContent() {
             if (d.getFullYear() === viewYear) {
                 const m = d.getMonth();
                 let amt = t.amount;
-                if (typeof amt === 'string') amt = parseFloat(amt.replace(',', '.'));
+                amt = parseMoney(amt);
                 amt = Number(amt);
                 if (isNaN(amt) || amt === 0) return;
                 const absAmt = Math.abs(amt);
@@ -927,7 +929,7 @@ function MinhaMerrecaContent() {
 
     // --- ACTIONS ---
     const handleSave = async () => {
-        const cleanAmount = parseFloat(amount.replace(/\./g, '').replace(',', '.')) || 0;
+        const cleanAmount = parseMoney(amount);
         const baseData = {
             userId: user.uid,
             amount: cleanAmount,
@@ -944,30 +946,51 @@ function MinhaMerrecaContent() {
         try {
             const batch = writeBatch(db);
             const startDate = new Date(entryDate + 'T12:00:00');
+            // Ao editar um lançamento fixo/parcelado que pertence a um grupo,
+            // oferece propagar os campos compartilhados para os irmãos
+            const propagateToGroup = async (edited) => {
+                if (!edited?.groupId) return;
+                const siblings = transactions.filter(t => t.groupId === edited.groupId && t.id !== editingId);
+                if (siblings.length === 0) return;
+                if (!window.confirm(`Aplicar essas mudanças às outras ${siblings.length} ocorrências (parcelas/meses) também?`)) return;
+                const shared = {
+                    description: baseData.description,
+                    category: baseData.category,
+                    paymentMethod: baseData.paymentMethod,
+                    observations: baseData.observations,
+                    ignoreInReports: baseData.ignoreInReports,
+                    updatedAt: serverTimestamp()
+                };
+                const b = writeBatch(db);
+                siblings.forEach(s => b.update(doc(db, "transactions", s.id), shared));
+                await b.commit();
+            };
             if (repeatType === 'fixo') {
                 if (editingId) {
                     await updateDoc(doc(db, "transactions", editingId), {
                         ...baseData,
                         date: entryDate
                     });
+                    await propagateToGroup(transactions.find(t => t.id === editingId));
                 } else {
+                    const groupId = doc(collection(db, "transactions")).id;
                     for (let i = 0; i < 12; i++) {
-                        const d = new Date(startDate);
-                        d.setMonth(d.getMonth() + i);
                         const newDoc = doc(collection(db, "transactions"));
-                        batch.set(newDoc, { ...baseData, date: d.toISOString().split('T')[0], status: i === 0 ? status : 'pendente' });
+                        batch.set(newDoc, { ...baseData, groupId, date: toISODate(addMonths(startDate, i)), status: i === 0 ? status : 'pendente' });
                     }
                     await batch.commit();
                 }
             } else if (repeatType === 'parcelado') {
                 if (editingId) {
                     await updateDoc(doc(db, "transactions", editingId), { ...baseData, date: entryDate });
+                    await propagateToGroup(transactions.find(t => t.id === editingId));
                 } else {
+                    // valor digitado = TOTAL da compra; cada parcela recebe sua fração
+                    const parts = splitInstallments(cleanAmount, installments);
+                    const groupId = doc(collection(db, "transactions")).id;
                     for (let i = 0; i < installments; i++) {
-                        const d = new Date(startDate);
-                        d.setMonth(d.getMonth() + i);
                         const newDoc = doc(collection(db, "transactions"));
-                        batch.set(newDoc, { ...baseData, date: d.toISOString().split('T')[0], status: 'pendente', parcelaNum: i + 1, parcelasTotal: installments });
+                        batch.set(newDoc, { ...baseData, amount: parts[i], groupId, totalAmount: cleanAmount, date: toISODate(addMonths(startDate, i)), status: 'pendente', parcelaNum: i + 1, parcelasTotal: installments });
                     }
                     await batch.commit();
                 }
@@ -1163,72 +1186,117 @@ function MinhaMerrecaContent() {
         setChatInput('');
         setIsTyping(true);
 
-        const apiKey = "REDACTED";
-
         try {
-            const monthTxs = monthTransactions.filter(t => !t.ignoreInReports && t.status === 'pago');
-            const summary = monthTxs.slice(0, 40).map(t => `${t.date}: ${t.description} - ${formatBoleto(t.amount)} (${categories[t.category]?.label})`).join('\n');
+            // Build REAL data from database for the AI
+            const monthTxs = monthTransactions.filter(t => !t.ignoreInReports);
+            const txList = monthTxs.map(t => {
+                let amt = t.amount;
+                amt = parseMoney(amt);
+                amt = Number(amt) || 0;
+                return `${t.date} | ${t.description} | ${formatBoleto(Math.abs(amt))} | ${categories[t.category]?.label || 'Outros'} | ${(t.type || 'saida').toLowerCase()} | ${t.status || 'pago'}`;
+            }).join('\n');
+
+            // Category breakdown from real calculated stats
+            const catBreakdown = categoryStats.map(s =>
+                `- ${s.config.label}: ${formatBoleto(s.total)} (${s.percent.toFixed(1)}%)`
+            ).join('\n');
+
+            // Income categories breakdown
+            const incomeCats = {};
+            monthTxs.forEach(t => {
+                const rawType = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (rawType === 'entrada' || rawType === 'receita') {
+                    let amt = t.amount;
+                    amt = parseMoney(amt);
+                    amt = Math.abs(Number(amt) || 0);
+                    const catLabel = categories[t.category]?.label || 'Outros';
+                    incomeCats[catLabel] = (incomeCats[catLabel] || 0) + amt;
+                }
+            });
+            const incomeBreakdown = Object.entries(incomeCats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([cat, val]) => `- ${cat}: ${formatBoleto(val)}`)
+                .join('\n');
+
+            // Monthly history from real annual data
             const historicalSummary = MONTHS.map((m, i) => {
                 const inc = annualData.summary.income[i];
                 const exp = annualData.summary.expense[i];
                 if (inc === 0 && exp === 0) return null;
-                return `${m}/${viewYear}: Entradas ${formatBoleto(inc)}, Saídas ${formatBoleto(exp)}`;
+                return `${m}/${viewYear}: Entradas ${formatBoleto(inc)}, Saídas ${formatBoleto(exp)}, Saldo ${formatBoleto(inc - exp)}`;
             }).filter(Boolean).join('\n');
 
-            const systemPrompt = `Você é a "Merreca", consultora financeira pessoal inteligente. Estilo direto, focado em metas e economia.
+            // Goals summary
+            const goalsSummary = goals.length > 0
+                ? goals.map(g => `- ${g.title}: ${formatBoleto(g.current || 0)} / ${formatBoleto(g.target || 0)} (${g.target > 0 ? ((g.current / g.target) * 100).toFixed(0) : 0}%)`).join('\n')
+                : 'Nenhuma meta cadastrada';
 
-REGRAS DE FORMATAÇÃO (OBRIGATÓRIO):
-- Responda SEMPRE de forma organizada com quebras de linha
+            const systemPrompt = `Você é a "Merreca", consultora financeira pessoal. Estilo direto, profissional, baseado em dados.
+
+REGRA FUNDAMENTAL: Todos os dados abaixo são REAIS, extraídos diretamente do banco de dados do usuário. NUNCA invente, estime ou crie dados fictícios. Use APENAS os dados fornecidos abaixo. Se não tiver dados suficientes para responder algo, diga claramente "não tenho essa informação nos seus lançamentos".
+
+REGRAS DE FORMATAÇÃO:
+- Responda de forma organizada com quebras de linha
 - Use listas com "- " para itens e "1. " para passos numerados
-- Use **negrito** para valores, categorias e títulos de seção
-- Use NO MÁXIMO 1-2 emojis por resposta (apenas no início de títulos de seção)
-- NUNCA coloque vários emojis juntos
-- Separe seções com uma linha em branco
-- Seja concisa: frases curtas e objetivas
-- Ao sugerir ações ao final, use lista numerada simples
+- Use **negrito** para valores e títulos de seção
+- Use NO MÁXIMO 1-2 emojis por resposta
+- Separe seções com linha em branco
+- Seja concisa e objetiva
 
-DADOS ATUAIS (${MONTHS[viewMonth]}/${viewYear}):
-- Saldo do Mês: ${formatBoleto(totals.balance)}
-- Total Entradas: ${formatBoleto(totals.income)}
-- Total Saídas: ${formatBoleto(totals.expense)}
-- Histórico do Ano: ${historicalSummary}
-- Últimos Lançamentos: ${summary}
+========== DADOS REAIS DO BANCO DE DADOS ==========
+
+MÊS ATUAL: ${MONTHS[viewMonth]}/${viewYear}
+- Total Entradas: **${formatBoleto(totals.income)}**
+- Total Saídas: **${formatBoleto(totals.expense)}**
+- Saldo: **${formatBoleto(totals.balance)}**
+- Total de lançamentos no mês: ${monthTxs.length}
+
+GASTOS POR CATEGORIA (dados reais do mês):
+${catBreakdown || 'Nenhum gasto registrado'}
+
+ENTRADAS POR CATEGORIA (dados reais do mês):
+${incomeBreakdown || 'Nenhuma entrada registrada'}
+
+HISTÓRICO MENSAL DO ANO ${viewYear} (dados reais):
+${historicalSummary || 'Sem histórico'}
+
+METAS FINANCEIRAS:
+${goalsSummary}
+
+TODOS OS LANÇAMENTOS DO MÊS (${monthTxs.length} registros reais):
+Data | Descrição | Valor | Categoria | Tipo | Status
+${txList || 'Nenhum lançamento'}
+
+========== FIM DOS DADOS REAIS ==========
 
 CATEGORIAS DISPONÍVEIS:
-${Object.entries(categories).map(([id, c]) => `${id}: ${c.label}`).join(', ')}
+${Object.entries(categories).map(([id, c]) => `${id}: ${c.label} (${c.type})`).join(', ')}
 
 REGRA DE LANÇAMENTO:
 Quando identificar uma nova despesa ou receita, inclua no final:
-[NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD" }]
-Use a categoria que melhor se encaixa. Se não souber, use 'outros'.
+[NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD", "paymentMethod": "PIX|CARD|CASH" }]
+Use "paymentMethod": "CARD" quando o usuário mencionar crédito/cartão de crédito/parcelado, "CASH" para dinheiro, e "PIX" para pix/débito ou quando não especificado.
 
 REGRA DE RELATÓRIO:
-Quando pedirem relatório, gere com estas seções separadas por linhas em branco:
-- **Resumo Geral** - entradas, saídas, saldo
-- **Top Gastos por Categoria** - lista ordenada
-- **Comparativo** - com meses anteriores se houver dados
-- **Alertas** - gastos acima da média
-- **Dicas** - 3 sugestões práticas e personalizadas
+Quando pedirem relatório, use APENAS os dados reais acima. Seções:
+- **Resumo Geral** - entradas, saídas, saldo (dados reais)
+- **Top Gastos por Categoria** - lista ordenada (dados reais)
+- **Comparativo Mensal** - com meses anteriores (dados reais)
+- **Alertas** - categorias com gastos acima da média
+- **Dicas** - 3 sugestões baseadas nos dados reais do usuário
 
 REGRA DE EXTRATO OFX:
-Analise transações, classifique nas categorias e sugira lançamentos com [NEW_TRANSACTION].`;
+Analise transações, classifique e sugira lançamentos com [NEW_TRANSACTION].`;
 
-            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
-                    'HTTP-Referer': 'https://minhamerreca.com.br',
-                    'X-Title': 'Minha Merreca'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: 'anthropic/claude-3.5-haiku',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         ...chatMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
                         { role: 'user', content: userMessage }
-                    ],
-                    temperature: 0.7
+                    ]
                 })
             });
 
@@ -1246,7 +1314,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                         userId: user.uid,
                         status: 'pago',
                         repeatType: 'avista',
-                        paymentMethod: 'PIX', // Default
+                        paymentMethod: txData.paymentMethod || 'PIX',
                         installments: 1,
                         ignoreInReports: false,
                         createdAt: serverTimestamp(),
@@ -1293,7 +1361,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                         </div>
                                         <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{goal.title}</h3>
                                     </div>
-                                    <button onClick={() => handleDeleteGoal(goal.id)} className="text-slate-200 hover:text-red-500 transition-colors">
+                                    <button onClick={() => handleDeleteGoal(goal.id)} className="text-slate-400 hover:text-red-500 transition-colors">
                                         <Trash2 size={18} />
                                     </button>
                                 </div>
@@ -1302,7 +1370,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     <div className="flex justify-between items-end">
                                         <p className="text-4xl font-black text-slate-800 tabular-nums">
                                             R$ {goal.current.toLocaleString('pt-BR')}
-                                            <span className="text-sm font-bold text-slate-300 ml-2">de R$ {goal.target.toLocaleString('pt-BR')}</span>
+                                            <span className="text-sm font-bold text-slate-400 ml-2">de R$ {goal.target.toLocaleString('pt-BR')}</span>
                                         </p>
                                         <p className="text-xl font-black text-[#8E44AD]">{progress}%</p>
                                     </div>
@@ -1333,10 +1401,10 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                 {goals.length === 0 && (
                     <div className="py-20 text-center space-y-6">
-                        <div className="bg-gray-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                        <div className="bg-gray-100 w-24 h-24 rounded-full flex items-center justify-center mx-auto text-slate-400">
                             <Target size={48} />
                         </div>
-                        <p className="text-slate-300 font-bold italic">Nenhuma meta ainda... Que tal planejar algo incrível? ✨</p>
+                        <p className="text-slate-400 font-bold italic">Nenhuma meta ainda... Que tal planejar algo incrível? ✨</p>
                     </div>
                 )}
 
@@ -1469,10 +1537,10 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                             </div>
                             <div>
                                 <h2 className="text-lg font-black text-slate-800 tracking-tight">Merreca</h2>
-                                <p className="text-[9px] font-bold text-[#8E44AD] uppercase tracking-widest">Consultora Financeira IA</p>
+                                <p className="text-[11px] font-bold text-[#8E44AD] uppercase tracking-widest">Consultora Financeira IA</p>
                             </div>
                         </div>
-                        <button onClick={() => setMerrecaOpen(false)} className="p-3 rounded-xl text-slate-300 hover:bg-gray-50 hover:text-slate-500 transition-all">
+                        <button onClick={() => setMerrecaOpen(false)} className="p-3 rounded-xl text-slate-400 hover:bg-gray-50 hover:text-slate-500 transition-all">
                             <X size={18} />
                         </button>
                     </div>
@@ -1548,7 +1616,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                             onSubmit={(e) => { e.preventDefault(); askMerreca(chatInput); }}
                             className="flex items-center gap-3"
                         >
-                            <label className="p-2.5 rounded-xl text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50 cursor-pointer transition-all shrink-0">
+                            <label className="p-2.5 rounded-xl text-slate-400 hover:text-[#8E44AD] hover:bg-purple-50 cursor-pointer transition-all shrink-0">
                                 <Paperclip size={20} />
                                 <input
                                     id="desktop-file-input"
@@ -1564,7 +1632,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     value={chatInput}
                                     onChange={(e) => setChatInput(e.target.value)}
                                     placeholder="Pergunte à Merreca..."
-                                    className="w-full bg-transparent px-4 py-3 font-bold text-sm outline-none text-slate-700 placeholder:text-slate-300 placeholder:font-medium"
+                                    className="w-full bg-transparent px-4 py-3 font-bold text-sm outline-none text-slate-700 placeholder:text-slate-400 placeholder:font-medium"
                                 />
                             </div>
 
@@ -1575,7 +1643,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all shrink-0 ${
                                     isListening
                                         ? 'bg-[#8E44AD] text-white shadow-md animate-pulse'
-                                        : 'text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50'
+                                        : 'text-slate-400 hover:text-[#8E44AD] hover:bg-purple-50'
                                 }`}
                             >
                                 <Mic size={20} />
@@ -1605,11 +1673,11 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
         return (
             <div className="flex items-center justify-center gap-12 py-3 px-6">
-                <button onClick={() => changeMonth(-1)} className="p-2 text-slate-200 hover:text-slate-400 transition-all"><ChevronLeft size={16} /></button>
+                <button onClick={() => changeMonth(-1)} className="p-2 text-slate-400 hover:text-slate-400 transition-all"><ChevronLeft size={16} /></button>
                 <div className="bg-white px-12 py-2 rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-gray-50 text-center">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">{months[viewMonth]}</span>
                 </div>
-                <button onClick={() => changeMonth(1)} className="p-2 text-slate-200 hover:text-slate-400 transition-all"><ChevronRight size={16} /></button>
+                <button onClick={() => changeMonth(1)} className="p-2 text-slate-400 hover:text-slate-400 transition-all"><ChevronRight size={16} /></button>
             </div>
         );
     };
@@ -1656,7 +1724,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                         <button
                             key={f.id}
                             onClick={() => handleFilter(f)}
-                            className={`px-8 py-4 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${isActive(f) ? 'bg-[#8E44AD] text-white shadow-xl shadow-purple-100' : 'bg-transparent text-slate-300 hover:text-slate-500 hover:bg-gray-50'}`}
+                            className={`px-8 py-4 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${isActive(f) ? 'bg-[#8E44AD] text-white shadow-xl shadow-purple-100' : 'bg-transparent text-slate-400 hover:text-slate-500 hover:bg-gray-50'}`}
                         >
                             {f.label}
                         </button>
@@ -1671,7 +1739,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                     {backupStatus && (
                         <span className="text-[10px] font-bold text-green-500 animate-pulse uppercase tracking-widest ml-4">{backupStatus}</span>
                     )}
-                    <button onClick={runBackup} className="p-4 text-slate-300 hover:text-[#8E44AD] transition-all" title="Salvar Backup">
+                    <button onClick={runBackup} className="p-4 text-slate-400 hover:text-[#8E44AD] transition-all" title="Salvar Backup">
                         <Download size={14} />
                     </button>
                 </div>
@@ -1685,7 +1753,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     <button
                                         key={id}
                                         onClick={() => handleFilter({ id })}
-                                        className={`px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shrink-0 border
+                                        className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all shrink-0 border
                                             ${active ? 'bg-green-100 text-green-600 border-green-200 shadow-sm' : 'bg-green-50/20 text-green-300 border-transparent hover:border-green-100 hover:text-green-500'}`}
                                     >
                                         {c.label}
@@ -1700,7 +1768,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     <button
                                         key={id}
                                         onClick={() => handleFilter({ id })}
-                                        className={`px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shrink-0 border
+                                        className={`px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all shrink-0 border
                                             ${active ? 'bg-red-100 text-red-600 border-red-200 shadow-sm' : 'bg-red-50/20 text-red-300 border-transparent hover:border-red-100 hover:text-red-500'}`}
                                     >
                                         {c.label}
@@ -1772,11 +1840,11 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
         return (
             <tr className="hover:bg-gray-50/80 transition-all group cursor-default border-b border-gray-50/50">
                 <td className="py-6 px-4">
-                    <button onClick={() => toggleStatus(t)} className={`px-5 py-2.5 rounded-full text-[8px] font-black uppercase tracking-[0.1em] transition-all shadow-sm ${st.color}`}>
+                    <button onClick={() => toggleStatus(t)} className={`px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.1em] transition-all shadow-sm ${st.color}`}>
                         {st.label}
                     </button>
                 </td>
-                <td className="py-6 px-4 text-[10px] font-black text-slate-300 uppercase tabular-nums">
+                <td className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tabular-nums">
                     <EditableCell
                         value={new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                         onSave={(val) => {
@@ -1809,14 +1877,14 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                     <select
                         value={t.repeatType || 'avista'}
                         onChange={(e) => handleUpdate('repeatType', e.target.value)}
-                        className="bg-transparent text-[9px] font-black text-slate-300 uppercase tracking-widest outline-none cursor-pointer"
+                        className="bg-transparent text-[11px] font-black text-slate-400 uppercase tracking-widest outline-none cursor-pointer"
                     >
                         <option value="avista">À VISTA</option>
                         <option value="fixo">FIXO</option>
                         <option value="parcelado">PARCELADO</option>
                     </select>
                 </td>
-                <td className="py-6 px-4 text-[10px] font-black text-slate-300 tabular-nums text-center">
+                <td className="py-6 px-4 text-[10px] font-black text-slate-400 tabular-nums text-center">
                     {t.repeatType === 'parcelado' ? (
                         <div className="flex items-center justify-center gap-1">
                             <input
@@ -1845,13 +1913,13 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                     </select>
                 </td>
                 <td className={`py-6 px-4 text-sm font-black text-right tabular-nums tracking-tight ${isPlus ? 'text-green-500' : 'text-slate-800'}`}>
-                    <div className="flex items-center justify-end gap-1">
-                        <span>{isPlus ? '+ ' : '- '} R$</span>
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                        <span className="whitespace-nowrap">{isPlus ? '+' : '-'} R$</span>
                         <input
                             type="text"
                             defaultValue={t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                             onBlur={(e) => {
-                                const val = parseFloat(e.target.value.replace(/\./g, '').replace(',', '.'));
+                                const val = parseMoney(e.target.value);
                                 if (!isNaN(val)) handleUpdate('amount', val);
                             }}
                             className="bg-transparent text-right outline-none w-[80px] hover:bg-purple-50 rounded p-1 transition-all"
@@ -1866,8 +1934,8 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                 </td>
                 <td className="py-6 px-4">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button onClick={() => setEditingId(t.id)} className="p-2.5 text-slate-300 hover:text-[#8E44AD] hover:bg-purple-50 rounded-xl transition-all"><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(t.id)} className="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={14} /></button>
+                        <button onClick={() => setEditingId(t.id)} className="p-2.5 text-slate-400 hover:text-[#8E44AD] hover:bg-purple-50 rounded-xl transition-all"><Edit2 size={14} /></button>
+                        <button onClick={() => handleDelete(t.id)} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={14} /></button>
                     </div>
                 </td>
             </tr>
@@ -1886,11 +1954,11 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                 <div className="flex justify-between items-start">
                     <div className="flex items-baseline gap-1.5 leading-none">
                         <span className="text-2xl font-black text-slate-800">{dateObj.getDate()}</span>
-                        <span className="text-xs font-bold text-slate-300 uppercase">{dateObj.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase">{dateObj.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase()}</span>
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={() => setEditingId(t.id)} className="text-slate-300 hover:text-[#8E44AD] transition-colors"><Edit2 size={18} /></button>
-                        <button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                        <button onClick={() => setEditingId(t.id)} className="text-slate-400 hover:text-[#8E44AD] transition-colors"><Edit2 size={18} /></button>
+                        <button onClick={() => handleDelete(t.id)} className="text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                     </div>
                 </div>
 
@@ -1899,9 +1967,13 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                     <h3 className="font-extrabold text-slate-700 text-sm leading-tight line-clamp-2 mt-1">{t.description}</h3>
                     <div className="text-right shrink-0">
                         <p className={`text-xl font-black whitespace-nowrap ${isPlus ? 'text-green-500' : 'text-red-500'}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                        {t.repeatType === 'parcelado' && (
+                        {t.repeatType === 'parcelado' ? (
                             <p className="text-[10px] font-black text-red-400 uppercase tracking-wider mt-0.5 text-right">
-                                {t.currentInstallment}/{t.installments} • CRÉDITO
+                                {t.parcelaNum || t.currentInstallment || 1}/{t.parcelasTotal || t.installments || 1} • {(PAYMENT_METHODS[t.paymentMethod] || PAYMENT_METHODS['CARD']).label.toUpperCase()}
+                            </p>
+                        ) : t.paymentMethod && (
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-0.5 text-right">
+                                {PAYMENT_METHODS[t.paymentMethod]?.label.toUpperCase()}
                             </p>
                         )}
                     </div>
@@ -1909,7 +1981,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                 {/* Row 3: Category */}
                 <div className="flex justify-between items-center mt-2">
-                    <span style={{ backgroundColor: hex + '20', color: hex }} className="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider">
+                    <span style={{ backgroundColor: hex + '20', color: hex }} className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider">
                         {cat.label}
                     </span>
                 </div>
@@ -1965,7 +2037,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
     return (
         <div className="min-h-screen bg-white pb-24 lg:pb-0 lg:flex overflow-hidden">
             {/* Sidebar Desktop */}
-            <aside className={`hidden lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 ${isSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-[380px]'} h-screen p-8 shrink-0 overflow-hidden relative z-[300]`}>
+            <aside className={`hidden lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 ${isSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-[380px]'} h-screen p-6 shrink-0 overflow-y-auto relative z-[300]`}>
                 <button
                     onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
                     className="absolute -right-3 top-20 bg-white border border-gray-100 p-1.5 rounded-full shadow-md z-10 hover:text-[#8E44AD] transition-all"
@@ -1973,34 +2045,34 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                     {isSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
                 </button>
 
-                <div className={`flex flex-col items-center mb-10 relative transition-all ${isSidebarCollapsed ? 'scale-75' : ''}`}>
+                <div className={`flex flex-col items-center mb-6 relative transition-all ${isSidebarCollapsed ? 'scale-75' : ''}`}>
                     <img src="/logo.png" alt="Minha Merreca" className="w-[120px] h-auto object-contain" />
                 </div>
 
-                <div className="flex flex-col gap-2 flex-1">
-                    <button onClick={() => setView('HOME')} className={`w-full py-4 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'HOME' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
+                <div className="flex flex-col gap-1.5 shrink-0 mb-6">
+                    <button onClick={() => setView('HOME')} className={`w-full py-3 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'HOME' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
                         <Home size={20} />
                         {!isSidebarCollapsed && <span className="font-bold">Dashboard</span>}
                     </button>
-                    <button onClick={() => setView('REPORTS')} className={`w-full py-4 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'REPORTS' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
+                    <button onClick={() => setView('REPORTS')} className={`w-full py-3 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'REPORTS' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
                         <BarChart2 size={20} />
                         {!isSidebarCollapsed && <span className="font-bold">Relatórios</span>}
                     </button>
-                    <button onClick={() => setView('GOALS')} className={`w-full py-4 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'GOALS' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
+                    <button onClick={() => setView('GOALS')} className={`w-full py-3 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'GOALS' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
                         <Target size={20} />
                         {!isSidebarCollapsed && <span className="font-bold">Metas</span>}
                     </button>
-                    <button onClick={() => setView('CAT_MGMT')} className={`w-full py-4 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'CAT_MGMT' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
+                    <button onClick={() => setView('CAT_MGMT')} className={`w-full py-3 px-6 rounded-2xl flex items-center gap-4 transition-all ${view === 'CAT_MGMT' ? 'bg-[#8E44AD] text-white shadow-lg' : 'text-slate-400 hover:bg-gray-50'}`}>
                         <Settings size={20} />
                         {!isSidebarCollapsed && <span className="font-bold">Categorias</span>}
                     </button>
-                    <button onClick={() => setMerrecaOpen(true)} className={`w-full py-4 px-6 rounded-2xl flex items-center gap-4 transition-all text-slate-400 hover:bg-purple-50 hover:text-[#8E44AD]`}>
+                    <button onClick={() => setMerrecaOpen(true)} className={`w-full py-3 px-6 rounded-2xl flex items-center gap-4 transition-all text-slate-400 hover:bg-purple-50 hover:text-[#8E44AD]`}>
                         <Sparkles size={20} />
                         {!isSidebarCollapsed && <span className="font-bold">Merreca IA</span>}
                     </button>
-                    <div className="mt-auto pt-4 border-t border-gray-100">
+                    <div className="pt-3 border-t border-gray-100">
                         {!isSidebarCollapsed && <p className="text-[10px] text-gray-400 truncate mb-2 px-6">{user.email}</p>}
-                        <button onClick={() => signOut(auth)} className="w-full py-4 px-6 rounded-2xl flex items-center gap-4 transition-all text-red-400 hover:bg-red-50 hover:text-red-600">
+                        <button onClick={() => signOut(auth)} className="w-full py-3 px-6 rounded-2xl flex items-center gap-4 transition-all text-red-400 hover:bg-red-50 hover:text-red-600">
                             <LogOut size={20} />
                             {!isSidebarCollapsed && <span className="font-bold">Sair</span>}
                         </button>
@@ -2009,23 +2081,23 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                 <div className="flex gap-2 mb-5 shrink-0">
                     <div className="flex-1 bg-white border border-gray-100 rounded-[1.2rem] p-3 shadow-[0_4px_15px_rgba(0,0,0,0.02)]">
-                        <p className="text-[7px] font-black text-green-500 uppercase tracking-[0.2em] mb-0.5 text-center font-outfit">Ganhos</p>
+                        <p className="text-[10px] font-black text-green-500 uppercase tracking-[0.2em] mb-0.5 text-center font-outfit">Ganhos</p>
                         <p className="text-[10px] font-black text-green-700 text-center tabular-nums">R$ {totals.income.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                     </div>
                     <div className="flex-1 bg-white border border-gray-100 rounded-[1.2rem] p-3 shadow-[0_4px_15px_rgba(0,0,0,0.02)]">
-                        <p className="text-[7px] font-black text-red-500 uppercase tracking-[0.2em] mb-0.5 text-center font-outfit">Gastos</p>
+                        <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em] mb-0.5 text-center font-outfit">Gastos</p>
                         <p className="text-[10px] font-black text-red-600 text-center tabular-nums">R$ {totals.expense.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                     </div>
                 </div>
 
-                <div className="bg-gray-50 p-5 rounded-[2.5rem] space-y-4 border border-gray-100 flex-1 flex flex-col justify-center min-h-0">
+                <div className="bg-gray-50 p-5 rounded-[2.5rem] space-y-4 border border-gray-100 shrink-0">
                     <div className="flex bg-white p-1 rounded-[1.2rem] border border-gray-100 shrink-0">
-                        <button onClick={() => setEntryType('saida')} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[9px] uppercase tracking-widest transition-all ${entryType === 'saida' ? 'bg-[#FF4B4B] text-white shadow-lg shadow-red-100' : 'text-slate-200 '}`}>Gasto</button>
-                        <button onClick={() => setEntryType('entrada')} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[9px] uppercase tracking-widest transition-all ${entryType === 'entrada' ? 'bg-[#2ECC71] text-white shadow-lg shadow-green-100' : 'text-slate-200 '}`}>Ganhos</button>
+                        <button onClick={() => { setEntryType('saida'); setSelectedCat('outros'); }} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[11px] uppercase tracking-widest transition-all ${entryType === 'saida' ? 'bg-[#FF4B4B] text-white shadow-lg shadow-red-100' : 'text-slate-400 '}`}>Gasto</button>
+                        <button onClick={() => { setEntryType('entrada'); setSelectedCat('dani'); }} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[11px] uppercase tracking-widest transition-all ${entryType === 'entrada' ? 'bg-[#2ECC71] text-white shadow-lg shadow-green-100' : 'text-slate-400 '}`}>Ganhos</button>
                     </div>
 
                     <div className="text-center shrink-0 flex items-center justify-center relative group">
-                        <span className="text-xl font-black text-slate-300 mr-1">R$</span>
+                        <span className="text-xl font-black text-slate-400 mr-1">R$</span>
                         <input
                             inputMode="numeric"
                             value={amount}
@@ -2035,7 +2107,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                         />
                         <button
                             onClick={startVoiceCommand}
-                            className={`absolute -right-2 p-3 rounded-full transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-slate-300 hover:text-[#8E44AD]'}`}
+                            className={`absolute -right-2 p-3 rounded-full transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-slate-400 hover:text-[#8E44AD]'}`}
                         >
                             <Mic size={18} />
                         </button>
@@ -2043,7 +2115,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                     <div className="space-y-3 shrink-0">
                         <div className="relative group">
-                            <p className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">O que é?</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">O que é?</p>
                             <input
                                 value={description}
                                 onChange={e => setDescription(e.target.value)}
@@ -2054,17 +2126,17 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                         <div className="grid grid-cols-2 gap-2">
                             <div>
-                                <p className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Categoria</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Categoria</p>
                                 <select
                                     value={selectedCat}
                                     onChange={e => setSelectedCat(e.target.value)}
                                     className="w-full p-3.5 bg-white rounded-[1.2rem] font-bold text-slate-700 outline-none border border-transparent focus:border-[#8E44AD]/20 transition-all text-xs appearance-none shadow-sm"
                                 >
-                                    {Object.entries(categories).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
+                                    {Object.entries(categories).filter(([, c]) => c.type === entryType).map(([id, c]) => <option key={id} value={id}>{c.label}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <p className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Pagamento</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Pagamento</p>
                                 <select
                                     value={selectedPayment}
                                     onChange={e => setSelectedPayment(e.target.value)}
@@ -2076,7 +2148,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                         </div>
 
                         <div className="relative group">
-                            <p className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Data</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Data</p>
                             <input
                                 type="date"
                                 value={entryDate}
@@ -2085,8 +2157,24 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                             />
                         </div>
 
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 mb-0.5 font-outfit">Repetição</p>
+                            <div className="flex gap-1.5">
+                                {[['avista', 'À vista'], ['fixo', 'Fixo'], ['parcelado', 'Parcelado']].map(([id, label]) => (
+                                    <button key={id} onClick={() => setRepeatType(id)} className={`flex-1 py-2.5 rounded-[1rem] font-black text-[11px] uppercase transition-all ${repeatType === id ? 'bg-[#8E44AD] text-white shadow-md' : 'bg-white text-slate-400 shadow-sm'}`}>{label}</button>
+                                ))}
+                            </div>
+                            {repeatType === 'parcelado' && (
+                                <div className="flex items-center gap-2 mt-2 px-4">
+                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Parcelas</span>
+                                    <input type="number" min="1" max="72" value={installments} onChange={e => setInstallments(Math.min(72, Math.max(1, parseInt(e.target.value, 10) || 1)))} className="w-16 p-2 bg-white rounded-lg text-center font-black text-sm text-[#8E44AD] outline-none border border-gray-200" />
+                                    <span className="text-[11px] font-bold text-slate-400">x de R$ {formatMoney(splitInstallments(parseMoney(amount), installments)[1] ?? splitInstallments(parseMoney(amount), installments)[0])}</span>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="flex items-center justify-between px-4 py-2 bg-white rounded-[1.2rem] shadow-sm border border-transparent">
-                            <label className="text-[7px] font-bold text-slate-300 uppercase tracking-[0.2em] cursor-pointer flex items-center gap-2" onClick={() => setIgnoreInReports(!ignoreInReports)}>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] cursor-pointer flex items-center gap-2" onClick={() => setIgnoreInReports(!ignoreInReports)}>
                                 <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center transition-all ${ignoreInReports ? 'bg-red-500 border-red-500' : 'bg-white border-gray-200 '}`}>
                                     {ignoreInReports && <Check size={10} className="text-white" />}
                                 </div>
@@ -2124,7 +2212,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                             <button onClick={() => changeMonth(-1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400"><ChevronLeft size={20} /></button>
                                             <div className="text-center">
                                                 <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">{MONTHS[viewMonth]}</h2>
-                                                <p className="text-[10px] font-black text-slate-300 tracking-[0.3em] font-outfit">2026</p>
+                                                <p className="text-[10px] font-black text-slate-400 tracking-[0.3em] font-outfit">2026</p>
                                             </div>
                                             <button onClick={() => changeMonth(1)} className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400"><ChevronRight size={20} /></button>
                                         </div>
@@ -2140,10 +2228,10 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     {filteredTransactions.map(t => <TransactionItem key={t.id} t={t} categories={categories} totals={totals} />)}
                                 </div>
                             ) : (
-                                <div className="bg-white rounded-[3rem] shadow-sm border border-gray-100 overflow-hidden">
-                                    <table className="w-full text-left border-collapse">
+                                <div className="bg-white rounded-[3rem] shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
+                                    <table className="w-full text-left border-collapse min-w-[1000px]">
                                         <thead>
-                                            <tr className="text-[9px] font-black text-slate-200 uppercase tracking-[0.2em]">
+                                            <tr className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
                                                 <th className="py-8 px-4 font-black">Status</th>
                                                 <th className="py-8 px-4 font-black">Data</th>
                                                 <th className="py-8 px-8 font-black">Descrição</th>
@@ -2164,12 +2252,12 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                             )}
                             {filteredTransactions.length === 0 && (
                                 <div className="py-24 text-center flex flex-col items-center justify-center space-y-4 animate-in fade-in zoom-in duration-700">
-                                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-slate-200 ">
+                                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-slate-400 ">
                                         <Inbox size={32} />
                                     </div>
                                     <div className="space-y-1">
-                                        <p className="text-slate-300 font-black uppercase tracking-[0.2em] text-[10px]">Silêncio por aqui...</p>
-                                        <p className="text-slate-200 font-bold text-xs italic">Sua lista de merrecas está vazia.</p>
+                                        <p className="text-slate-400 font-black uppercase tracking-[0.2em] text-[10px]">Silêncio por aqui...</p>
+                                        <p className="text-slate-400 font-bold text-xs italic">Sua lista de merrecas está vazia.</p>
                                     </div>
                                 </div>
                             )}
@@ -2190,14 +2278,14 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 {/* Valor Compacto */}
                                 <div className="text-center">
                                     <div className="relative flex items-center justify-center gap-1">
-                                        <span className="text-[16px] font-black text-slate-300 opacity-60">R$</span>
+                                        <span className="text-[16px] font-black text-slate-400 opacity-60">R$</span>
                                         <input autoFocus inputMode="decimal" value={amount} onChange={handleAmountChange} placeholder="0,00" className="w-full max-w-[200px] text-[52px] leading-[1.1] font-black text-slate-800 outline-none text-center bg-transparent border-b-2 border-slate-50 focus:border-[#8E44AD] transition-all" />
                                     </div>
                                 </div>
 
                                 {/* Categoria */}
                                 <div>
-                                    <label className="text-[8px] font-black uppercase text-slate-300 block mb-1 tracking-widest text-center">Categoria</label>
+                                    <label className="text-[11px] font-black uppercase text-slate-400 block mb-1 tracking-widest text-center">Categoria</label>
                                     <select value={selectedCat} onChange={(e) => setSelectedCat(e.target.value)} className="w-full p-2 bg-gray-50 rounded-xl font-bold text-slate-700 outline-none text-center text-sm shadow-sm appearance-none border border-transparent focus:border-[#8E44AD]/20">
                                         {Object.entries(categories).filter(([_, c]) => c.type === entryType || c.type === 'both').map(([id, c]) => (<option key={id} value={id}>{c.label.toUpperCase()}</option>))}
                                     </select>
@@ -2205,11 +2293,11 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="text-[8px] font-black uppercase text-slate-300 block mb-1 tracking-widest">Data</label>
+                                        <label className="text-[11px] font-black uppercase text-slate-400 block mb-1 tracking-widest">Data</label>
                                         <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} className="w-full p-2 bg-gray-50 rounded-xl font-bold text-slate-700 outline-none text-xs border border-transparent focus:border-[#8E44AD]/20" />
                                     </div>
                                     <div>
-                                        <label className="text-[8px] font-black uppercase text-slate-300 block mb-1 tracking-widest">Pagamento</label>
+                                        <label className="text-[11px] font-black uppercase text-slate-400 block mb-1 tracking-widest">Pagamento</label>
                                         <select value={selectedPayment} onChange={e => setSelectedPayment(e.target.value)} className="w-full p-2 bg-gray-50 rounded-xl font-bold text-slate-700 outline-none text-xs border border-transparent focus:border-[#8E44AD]/20">
                                             {Object.entries(PAYMENT_METHODS).map(([id, p]) => (<option key={id} value={id}>{p.label}</option>))}
                                         </select>
@@ -2217,16 +2305,16 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 </div>
 
                                 <div>
-                                    <label className="text-[8px] font-black uppercase text-slate-300 block mb-1 tracking-widest">Descrição</label>
+                                    <label className="text-[11px] font-black uppercase text-slate-400 block mb-1 tracking-widest">Descrição</label>
                                     <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Descrição" className="w-full p-3 bg-gray-50 rounded-xl font-bold text-slate-700 outline-none text-sm border border-transparent focus:border-[#8E44AD]/20" />
                                 </div>
 
                                 <div className="bg-gray-50 p-3 rounded-2xl space-y-2 border border-gray-100">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Repetição/Parcelas</label>
+                                        <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">Repetição/Parcelas</label>
                                         <div className="flex gap-1">
                                             {['avista', 'fixo', 'parcelado'].map(type => (
-                                                <button key={type} onClick={() => setRepeatType(type)} className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${repeatType === type ? 'bg-[#8E44AD] text-white shadow-sm' : 'bg-white text-slate-300'}`}>
+                                                <button key={type} onClick={() => setRepeatType(type)} className={`px-2 py-1 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${repeatType === type ? 'bg-[#8E44AD] text-white shadow-sm' : 'bg-white text-slate-400'}`}>
                                                     {type === 'avista' ? 'À vista' : type === 'fixo' ? 'Fixo' : 'Parc.'}
                                                 </button>
                                             ))}
@@ -2234,8 +2322,8 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                     </div>
                                     {repeatType === 'parcelado' && (
                                         <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                                            <label className="text-[8px] font-black uppercase text-slate-400">Qtd</label>
-                                            <input type="number" min="1" max="72" value={installments} onChange={e => setInstallments(parseInt(e.target.value))} className="w-12 p-1 bg-white rounded-lg text-center font-black text-xs text-[#8E44AD] outline-none border border-gray-200" />
+                                            <label className="text-[11px] font-black uppercase text-slate-400">Qtd</label>
+                                            <input type="number" min="1" max="72" value={installments} onChange={e => setInstallments(Math.min(72, Math.max(1, parseInt(e.target.value, 10) || 1)))} className="w-12 p-1 bg-white rounded-lg text-center font-black text-xs text-[#8E44AD] outline-none border border-gray-200" />
                                         </div>
                                     )}
                                 </div>
@@ -2243,7 +2331,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 <button onClick={handleSave} className={`w-full text-white py-4 rounded-2xl font-black text-lg shadow-lg uppercase tracking-widest ${entryType === 'saida' ? 'bg-[#FF4B4B] shadow-red-100/50' : 'bg-[#2ECC71] shadow-green-100/50'}`}>
                                     Anotar
                                 </button>
-                                <button onClick={() => { resetForm(); setView('HOME'); }} className="w-full py-2 text-slate-300 font-bold uppercase tracking-widest text-[8px]">Cancelar</button>
+                                <button onClick={() => { resetForm(); setView('HOME'); }} className="w-full py-2 text-slate-400 font-bold uppercase tracking-widest text-[11px]">Cancelar</button>
                             </div>
                         </div>
                     ) : (
@@ -2268,24 +2356,24 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
                                         <div className="p-2 bg-green-50 text-green-500 rounded-full mb-1"><ArrowUpCircle size={24} /></div>
-                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">Ganhos</p>
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Ganhos</p>
                                         <p className="text-lg font-black text-slate-800 tabular-nums">R$ {(totals?.income || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                                     </div>
                                     <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
                                         <div className="p-2 bg-red-50 text-red-500 rounded-full mb-1"><ArrowDownCircle size={24} /></div>
-                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">Gastos</p>
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Gastos</p>
                                         <p className="text-lg font-black text-slate-800 tabular-nums">R$ {(totals?.expense || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                                     </div>
                                     <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
                                         <div className="p-2 bg-purple-50 text-[#8E44AD] rounded-full mb-1"><Wallet size={24} /></div>
-                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">Sobrou</p>
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Sobrou</p>
                                         <p className="text-lg font-black text-slate-800 tabular-nums">R$ {(totals?.balance || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
                                     </div>
                                     <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 aspect-square">
                                         <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center font-black text-[10px] text-slate-400">
                                             {totals.income > 0 ? Math.round((totals.expense / totals.income) * 100) : 0}%
                                         </div>
-                                        <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest text-center">% Usado</p>
+                                        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">% Usado</p>
                                         <p className="text-lg font-black text-slate-800 tabular-nums">{totals.income > 0 ? Math.round((totals.expense / totals.income) * 100) : 0}%</p>
                                     </div>
                                 </div>
@@ -2308,7 +2396,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 <div className="bg-white p-10 rounded-[4rem] shadow-sm border border-gray-100">
-                                    <h3 className="text-xs font-black text-slate-300 uppercase tracking-[0.2em] mb-8 text-center">Distribuição de Gastos</h3>
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-8 text-center">Distribuição de Gastos</h3>
                                     <div className="h-[300px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <PieChart>
@@ -2335,7 +2423,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 </div>
 
                                 <div className="bg-white p-10 rounded-[4rem] shadow-sm border border-gray-100">
-                                    <h3 className="text-xs font-black text-slate-300 uppercase tracking-[0.2em] mb-8 text-center">Evolução Semanal</h3>
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-8 text-center">Evolução Semanal</h3>
                                     <div className="h-[300px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <AreaChart data={(() => {
@@ -2383,7 +2471,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                             </div>
 
                             <div className="bg-white p-10 rounded-[4rem] shadow-sm border border-gray-100 overflow-hidden">
-                                <h3 className="text-xs font-black text-slate-300 uppercase tracking-[0.2em] mb-12 text-center">Maiores Gastos por Categoria</h3>
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-12 text-center">Maiores Gastos por Categoria</h3>
                                 <div className="space-y-4">
                                     {categoryStats && categoryStats.slice(0, 5).map(stat => (
                                         <div key={stat.id} className="group">
@@ -2407,7 +2495,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                 <div className="overflow-x-auto no-scrollbar">
                                     <table className="w-full text-left border-collapse min-w-[300px] lg:min-w-[900px]">
                                         <thead>
-                                            <tr className="text-slate-300 font-bold uppercase text-[10px] tracking-[0.2em]">
+                                            <tr className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.2em]">
                                                 <th className="py-8 px-6 font-outfit">Categoria</th>
                                                 {isMobile ? (
                                                     <th className="py-8 px-2 text-center font-outfit bg-[#8E44AD]/5 rounded-t-2xl">{MONTHS[viewMonth].substring(0, 3)}</th>
@@ -2433,12 +2521,12 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                                         </span>
                                                     </td>
                                                     {isMobile ? (
-                                                        <td className={`py-6 px-2 text-center text-sm tabular-nums bg-[#8E44AD]/5 ${row.values[viewMonth] > 0 ? 'font-black text-slate-800' : 'font-medium text-slate-200'}`}>
+                                                        <td className={`py-6 px-2 text-center text-sm tabular-nums bg-[#8E44AD]/5 ${row.values[viewMonth] > 0 ? 'font-black text-slate-800' : 'font-medium text-slate-400'}`}>
                                                             {row.values[viewMonth] > 0 ? row.values[viewMonth].toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '-'}
                                                         </td>
                                                     ) : (
                                                         row.values.slice(0, 12).map((val, i) => (
-                                                            <td key={i} className={`py-6 px-2 text-center text-sm tabular-nums ${val > 0 ? 'font-black text-slate-800' : 'font-medium text-slate-200'}`}>
+                                                            <td key={i} className={`py-6 px-2 text-center text-sm tabular-nums ${val > 0 ? 'font-black text-slate-800' : 'font-medium text-slate-400'}`}>
                                                                 {val > 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '-'}
                                                             </td>
                                                         ))
@@ -2483,23 +2571,23 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                         <div className="flex items-center gap-5">
                                             <div className={`w-3 h-10 ${c.color} rounded-full shadow-lg`}></div>
                                             <div className="text-left">
-                                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-300 mb-1">{c.type === 'entrada' ? 'Ganhos' : 'Gasto'}</p>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{c.type === 'entrada' ? 'Ganhos' : 'Gasto'}</p>
                                                 <h3 className="font-black text-slate-700 text-lg">{c.label}</h3>
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={() => setEditingCatId(id)} className="p-3 text-slate-200 hover:text-[#8E44AD] transition-colors"><Edit2 size={18} /></button>
+                                            <button onClick={() => setEditingCatId(id)} className="p-3 text-slate-400 hover:text-[#8E44AD] transition-colors"><Edit2 size={18} /></button>
                                             {!INITIAL_CATEGORIES[id] && (
                                                 <button onClick={async () => {
                                                     if (confirm(`Apagar categoria "${c.label}"?`)) await deleteDoc(doc(db, "categories", id));
-                                                }} className="p-3 text-slate-200 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                                                }} className="p-3 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
                                             )}
                                         </div>
                                     </div>
                                 ))}
                                 <button
                                     onClick={() => setEditingCatId('NEW')}
-                                    className="flex items-center justify-center p-8 bg-gray-50 rounded-[3rem] border-4 border-dashed border-gray-100 text-slate-300 hover:border-[#8E44AD]/30 hover:text-[#8E44AD] hover:bg-white group transition-all"
+                                    className="flex items-center justify-center p-8 bg-gray-50 rounded-[3rem] border-4 border-dashed border-gray-100 text-slate-400 hover:border-[#8E44AD]/30 hover:text-[#8E44AD] hover:bg-white group transition-all"
                                 >
                                     <div className="flex flex-col items-center gap-2">
                                         <Plus size={32} className="group-hover:scale-125 transition-transform" />
@@ -2551,7 +2639,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                                     <div className={`w-1.5 h-6 rounded-full ${category.color || 'bg-[#8E44AD]'}`}></div>
                                                     <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">{category.label}</h3>
                                                 </div>
-                                                <span className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wider ${isExceeded ? 'bg-red-50 text-red-500' : 'bg-purple-50 text-[#8E44AD]'}`}>
+                                                <span className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider ${isExceeded ? 'bg-red-50 text-red-500' : 'bg-purple-50 text-[#8E44AD]'}`}>
                                                     {isExceeded ? 'META EXCEDIDA' : `${Math.round(progress)}% DA META`}
                                                 </span>
                                             </div>
@@ -2569,7 +2657,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                                     {isExceeded && <p className="text-[10px] font-bold text-red-500">Excedeu em R$ {(monthSpend - targetValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>}
                                                 </div>
                                                 <div className="text-right flex flex-col items-end">
-                                                    <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1">Meta</p>
+                                                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Meta</p>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-sm font-bold text-slate-400">R$</span>
                                                         <input
@@ -2596,7 +2684,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                                                             }}
                                                             className="w-20 font-black text-slate-800 text-xl outline-none border-b border-transparent focus:border-[#8E44AD] transition-all bg-transparent p-0 text-right tabular-nums"
                                                         />
-                                                        <div className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-slate-300 pointer-events-none bg-gray-50">
+                                                        <div className="w-8 h-8 rounded-full border border-gray-100 flex items-center justify-center text-slate-400 pointer-events-none bg-gray-50">
                                                             <Edit2 size={12} />
                                                         </div>
                                                     </div>
@@ -2630,7 +2718,7 @@ Analise transações, classifique nas categorias e sugira lançamentos com [NEW_
                             <div className="space-y-3">
                                 <button onClick={() => handleDeleteConfirm('single')} className="w-full bg-slate-100 py-4 rounded-2xl font-bold ">Apenas agora</button>
                                 <button onClick={() => handleDeleteConfirm('future')} className="w-full bg-red-500 text-white py-4 rounded-2xl font-black uppercase">Apagar tudo</button>
-                                <button onClick={() => setDeleteModal(null)} className="w-full py-4 text-slate-300 font-bold uppercase text-xs">Desistir</button>
+                                <button onClick={() => setDeleteModal(null)} className="w-full py-4 text-slate-400 font-bold uppercase text-xs">Desistir</button>
                             </div>
                         </div>
                     </div>
