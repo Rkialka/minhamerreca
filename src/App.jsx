@@ -1163,73 +1163,117 @@ function MinhaMerrecaContent() {
         setChatInput('');
         setIsTyping(true);
 
-        const apiKey = "REDACTED";
-
         try {
-            const monthTxs = monthTransactions.filter(t => !t.ignoreInReports && t.status === 'pago');
-            const summary = monthTxs.slice(0, 40).map(t => `${t.date}: ${t.description} - ${formatBoleto(t.amount)} (${categories[t.category]?.label})`).join('\n');
+            // Build REAL data from database for the AI
+            const monthTxs = monthTransactions.filter(t => !t.ignoreInReports);
+            const txList = monthTxs.map(t => {
+                let amt = t.amount;
+                if (typeof amt === 'string') amt = parseFloat(amt.replace(',', '.'));
+                amt = Number(amt) || 0;
+                return `${t.date} | ${t.description} | ${formatBoleto(Math.abs(amt))} | ${categories[t.category]?.label || 'Outros'} | ${(t.type || 'saida').toLowerCase()} | ${t.status || 'pago'}`;
+            }).join('\n');
+
+            // Category breakdown from real calculated stats
+            const catBreakdown = categoryStats.map(s =>
+                `- ${s.config.label}: ${formatBoleto(s.total)} (${s.percent.toFixed(1)}%)`
+            ).join('\n');
+
+            // Income categories breakdown
+            const incomeCats = {};
+            monthTxs.forEach(t => {
+                const rawType = (t.type || 'saida').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (rawType === 'entrada' || rawType === 'receita') {
+                    let amt = t.amount;
+                    if (typeof amt === 'string') amt = parseFloat(amt.replace(',', '.'));
+                    amt = Math.abs(Number(amt) || 0);
+                    const catLabel = categories[t.category]?.label || 'Outros';
+                    incomeCats[catLabel] = (incomeCats[catLabel] || 0) + amt;
+                }
+            });
+            const incomeBreakdown = Object.entries(incomeCats)
+                .sort((a, b) => b[1] - a[1])
+                .map(([cat, val]) => `- ${cat}: ${formatBoleto(val)}`)
+                .join('\n');
+
+            // Monthly history from real annual data
             const historicalSummary = MONTHS.map((m, i) => {
                 const inc = annualData.summary.income[i];
                 const exp = annualData.summary.expense[i];
                 if (inc === 0 && exp === 0) return null;
-                return `${m}/${viewYear}: Entradas ${formatBoleto(inc)}, Saídas ${formatBoleto(exp)}`;
+                return `${m}/${viewYear}: Entradas ${formatBoleto(inc)}, Saídas ${formatBoleto(exp)}, Saldo ${formatBoleto(inc - exp)}`;
             }).filter(Boolean).join('\n');
 
-            const systemPrompt = `Você é a "Merreca", consultora financeira pessoal inteligente. Estilo direto, focado em metas e economia.
+            // Goals summary
+            const goalsSummary = goals.length > 0
+                ? goals.map(g => `- ${g.title}: ${formatBoleto(g.current || 0)} / ${formatBoleto(g.target || 0)} (${g.target > 0 ? ((g.current / g.target) * 100).toFixed(0) : 0}%)`).join('\n')
+                : 'Nenhuma meta cadastrada';
 
-REGRAS DE FORMATAÇÃO (OBRIGATÓRIO):
-- Responda SEMPRE de forma organizada com quebras de linha
+            const systemPrompt = `Você é a "Merreca", consultora financeira pessoal. Estilo direto, profissional, baseado em dados.
+
+REGRA FUNDAMENTAL: Todos os dados abaixo são REAIS, extraídos diretamente do banco de dados do usuário. NUNCA invente, estime ou crie dados fictícios. Use APENAS os dados fornecidos abaixo. Se não tiver dados suficientes para responder algo, diga claramente "não tenho essa informação nos seus lançamentos".
+
+REGRAS DE FORMATAÇÃO:
+- Responda de forma organizada com quebras de linha
 - Use listas com "- " para itens e "1. " para passos numerados
-- Use **negrito** para valores, categorias e títulos de seção
-- Use NO MÁXIMO 1-2 emojis por resposta (apenas no início de títulos de seção)
-- NUNCA coloque vários emojis juntos
-- Separe seções com uma linha em branco
-- Seja concisa: frases curtas e objetivas
-- Ao sugerir ações ao final, use lista numerada simples
+- Use **negrito** para valores e títulos de seção
+- Use NO MÁXIMO 1-2 emojis por resposta
+- Separe seções com linha em branco
+- Seja concisa e objetiva
 
-DADOS ATUAIS (${MONTHS[viewMonth]}/${viewYear}):
-- Saldo do Mês: ${formatBoleto(totals.balance)}
-- Total Entradas: ${formatBoleto(totals.income)}
-- Total Saídas: ${formatBoleto(totals.expense)}
-- Histórico do Ano: ${historicalSummary}
-- Últimos Lançamentos: ${summary}
+========== DADOS REAIS DO BANCO DE DADOS ==========
+
+MÊS ATUAL: ${MONTHS[viewMonth]}/${viewYear}
+- Total Entradas: **${formatBoleto(totals.income)}**
+- Total Saídas: **${formatBoleto(totals.expense)}**
+- Saldo: **${formatBoleto(totals.balance)}**
+- Total de lançamentos no mês: ${monthTxs.length}
+
+GASTOS POR CATEGORIA (dados reais do mês):
+${catBreakdown || 'Nenhum gasto registrado'}
+
+ENTRADAS POR CATEGORIA (dados reais do mês):
+${incomeBreakdown || 'Nenhuma entrada registrada'}
+
+HISTÓRICO MENSAL DO ANO ${viewYear} (dados reais):
+${historicalSummary || 'Sem histórico'}
+
+METAS FINANCEIRAS:
+${goalsSummary}
+
+TODOS OS LANÇAMENTOS DO MÊS (${monthTxs.length} registros reais):
+Data | Descrição | Valor | Categoria | Tipo | Status
+${txList || 'Nenhum lançamento'}
+
+========== FIM DOS DADOS REAIS ==========
 
 CATEGORIAS DISPONÍVEIS:
-${Object.entries(categories).map(([id, c]) => `${id}: ${c.label}`).join(', ')}
+${Object.entries(categories).map(([id, c]) => `${id}: ${c.label} (${c.type})`).join(', ')}
 
 REGRA DE LANÇAMENTO:
 Quando identificar uma nova despesa ou receita, inclua no final:
 [NEW_TRANSACTION: { "description": "...", "amount": 0.00, "category": "cat_id", "type": "saida|entrada", "date": "YYYY-MM-DD", "paymentMethod": "PIX|CARD|CASH" }]
-Use a categoria que melhor se encaixa. Se não souber, use 'outros'.
 Use "paymentMethod": "CARD" quando o usuário mencionar crédito/cartão de crédito/parcelado, "CASH" para dinheiro, e "PIX" para pix/débito ou quando não especificado.
 
 REGRA DE RELATÓRIO:
-Quando pedirem relatório, gere com estas seções separadas por linhas em branco:
-- **Resumo Geral** - entradas, saídas, saldo
-- **Top Gastos por Categoria** - lista ordenada
-- **Comparativo** - com meses anteriores se houver dados
-- **Alertas** - gastos acima da média
-- **Dicas** - 3 sugestões práticas e personalizadas
+Quando pedirem relatório, use APENAS os dados reais acima. Seções:
+- **Resumo Geral** - entradas, saídas, saldo (dados reais)
+- **Top Gastos por Categoria** - lista ordenada (dados reais)
+- **Comparativo Mensal** - com meses anteriores (dados reais)
+- **Alertas** - categorias com gastos acima da média
+- **Dicas** - 3 sugestões baseadas nos dados reais do usuário
 
 REGRA DE EXTRATO OFX:
-Analise transações, classifique nas categorias e sugira lançamentos com [NEW_TRANSACTION].`;
+Analise transações, classifique e sugira lançamentos com [NEW_TRANSACTION].`;
 
-            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
-                    'HTTP-Referer': 'https://minhamerreca.com.br',
-                    'X-Title': 'Minha Merreca'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: 'anthropic/claude-3.5-haiku',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         ...chatMessages.slice(-10).map(m => ({ role: m.role, content: m.content })),
                         { role: 'user', content: userMessage }
-                    ],
-                    temperature: 0.7
+                    ]
                 })
             });
 
